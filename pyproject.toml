@@ -1,0 +1,13 @@
+[build-system]
+requires = ["scikit-build-core>=0.5.0", "nanobind>=1.6.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fastscrub"
+version = "0.1.0"
+description = "High-performance PII scrubbing engine with C++20 backend and Python bindings."
+requires-python = ">=3.8"
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+editable.mode = "inplace"
