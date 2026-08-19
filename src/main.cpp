@@ -20,16 +20,33 @@ NB_MODULE(fastscrub_backend, m) {
         .def(nb::init<unsigned>(), nb::arg("worker_count") = 0)
         
         // Sequential scrub
-        .def("scrub", &Engine::scrub, nb::arg("input"), 
-             "Scrub a single string sequentially.")
+        .def("scrub", [](const Engine& engine, nb::str py_input) {
+            std::string_view input = nb::cast<std::string_view>(py_input);
+            auto out = engine.scrub(input);
+            if (out.has_value()) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(out->data(), (Py_ssize_t)out->size(), "replace");
+                if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
+                return nb::steal<nb::str>(py_s);
+            } else {
+                return py_input; // ZERO COPY!
+            }
+        }, nb::arg("input"), "Scrub a single string sequentially.")
              
         // Parallel bulk scrub with GIL released
-        .def("scrub_bulk", [](const Engine& engine, std::string_view input) {
-            // Drop Python's Global Interpreter Lock (GIL) here.
-            // This allows the std::jthread workers in the C++ backend
-            // to execute concurrently on multiple CPU cores without blocking Python.
-            nb::gil_scoped_release release;
-            return engine.scrub_bulk(input);
+        .def("scrub_bulk", [](const Engine& engine, nb::str py_input) {
+            std::string_view input = nb::cast<std::string_view>(py_input);
+            std::optional<std::string> out;
+            {
+                nb::gil_scoped_release release;
+                out = engine.scrub_bulk(input);
+            }
+            if (out.has_value()) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(out->data(), (Py_ssize_t)out->size(), "replace");
+                if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
+                return nb::steal<nb::str>(py_s);
+            } else {
+                return py_input; // ZERO COPY!
+            }
         }, nb::arg("input"),
         "Scrub a large text buffer in parallel, safely releasing the GIL.");
 
@@ -41,15 +58,15 @@ NB_MODULE(fastscrub_backend, m) {
         size_t num_items = nb::len(py_list);
         std::vector<std::string_view> inputs;
         inputs.reserve(num_items);
+        std::vector<nb::handle> py_handles(num_items);
 
         // 1. Extract raw string pointers from Python list natively (Zero-Copy)
-        // Must hold the GIL during this step because Python memory is accessed.
         for (size_t i = 0; i < num_items; ++i) {
-            nb::handle item = py_list[i];
-            inputs.push_back(nb::cast<std::string_view>(item));
+            py_handles[i] = py_list[i];
+            inputs.push_back(nb::cast<std::string_view>(py_handles[i]));
         }
 
-        std::vector<std::string> outputs(num_items);
+        std::vector<std::optional<std::string>> outputs(num_items);
         std::atomic<size_t> next_idx{0};
         Engine engine(workers);
 
@@ -69,14 +86,16 @@ NB_MODULE(fastscrub_backend, m) {
             }
         } // 3. All threads join here natively, then the GIL is re-acquired.
 
-        // 4. Convert std::vector<std::string> to nb::list using "replace" for strict UTF-8 safety
+        // 4. Zero-Copy return logic
         nb::list py_out;
-        for (const auto& s : outputs) {
-            PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), (Py_ssize_t)s.size(), "replace");
-            if (!py_s) {
-                throw std::runtime_error("Failed to decode string to Python UTF-8");
+        for (size_t i = 0; i < outputs.size(); ++i) {
+            if (outputs[i].has_value()) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(outputs[i]->data(), (Py_ssize_t)outputs[i]->size(), "replace");
+                if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
+                py_out.append(nb::steal<nb::str>(py_s));
+            } else {
+                py_out.append(py_handles[i]); // ZERO COPY!
             }
-            py_out.append(nb::steal<nb::str>(py_s));
         }
 
         return py_out;

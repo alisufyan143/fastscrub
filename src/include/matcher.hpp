@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <string_view>
+#include <optional>
 
 namespace fastscrub {
 
@@ -12,7 +13,7 @@ public:
     /// Scan the input and replace all detected PII with mask tokens.
     /// Input is read via string_view (zero-copy); returns a new std::string
     /// with replacements applied.
-    std::string scrub(std::string_view input) const;
+    std::optional<std::string> scrub(std::string_view input) const;
 
 private:
 

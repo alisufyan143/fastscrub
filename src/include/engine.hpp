@@ -22,12 +22,12 @@ public:
     explicit Engine(unsigned worker_count = 0);
 
     /// Scrub a single string.  Thin delegate to Matcher::scrub().
-    std::string scrub(std::string_view input) const;
+    std::optional<std::string> scrub(std::string_view input) const;
 
     /// Scrub a large text buffer in parallel.
     /// The input is sliced on whitespace boundaries so that no PII
     /// token is ever split across worker threads.
-    std::string scrub_bulk(std::string_view input) const;
+    std::optional<std::string> scrub_bulk(std::string_view input) const;
 
 private:
     Matcher  matcher_;

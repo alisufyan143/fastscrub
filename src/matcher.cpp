@@ -23,6 +23,42 @@ inline bool is_email_domain(char c) noexcept {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-';
 }
 
+inline bool has_context_word(std::string_view input, std::size_t pos, const std::string_view* keywords, size_t num_keywords) noexcept {
+    std::size_t start = (pos > 40) ? pos - 40 : 0;
+    std::string_view window = input.substr(start, pos - start);
+    
+    char lower_window[64];
+    std::size_t win_len = window.size();
+    if (win_len > 64) win_len = 64; 
+    
+    for (std::size_t i = 0; i < win_len; ++i) {
+        lower_window[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(window[i])));
+    }
+    std::string_view l_win(lower_window, win_len);
+    
+    for (size_t i = 0; i < num_keywords; ++i) {
+        if (l_win.find(keywords[i]) != std::string_view::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::size_t parse_id_num(std::string_view s, std::size_t pos) noexcept {
+    std::size_t curr = pos;
+    while (curr < s.size() && is_digit(s[curr])) {
+        curr++;
+    }
+    std::size_t len = curr - pos;
+    if (len >= 8 && len <= 15) {
+        static constexpr std::string_view keywords[] = {"id", "student", "number", "ssn", "tax", "account", "no.", "num"};
+        if (has_context_word(s, pos, keywords, 8)) {
+            return len;
+        }
+    }
+    return 0;
+}
+
 std::size_t parse_uuid(std::string_view s, std::size_t pos) noexcept {
     if (pos + 36 > s.size()) return 0;
     int layout[] = {8, 4, 4, 4, 12};
@@ -130,49 +166,48 @@ std::size_t parse_credit_card(std::string_view s, std::size_t pos) noexcept {
 
 std::size_t parse_phone(std::string_view s, std::size_t pos) noexcept {
     std::size_t curr = pos;
+    int digits = 0;
+    std::size_t valid_end = 0;
+    std::size_t first_chunk = 0;
+    bool counting_first = true;
     
     if (curr < s.size() && s[curr] == '+') {
         curr++;
-        std::size_t start = curr;
-        while (curr < s.size() && is_digit(s[curr])) curr++;
-        std::size_t len = curr - start;
-        if (len >= 1 && len <= 3) {
-            if (curr < s.size() && (s[curr] == ' ' || s[curr] == '-')) {
-                curr++;
-            } else {
-                curr = pos;
+    }
+    
+    while (curr < s.size()) {
+        char c = s[curr];
+        if (is_digit(c)) {
+            if (counting_first) first_chunk++;
+            digits++;
+            curr++;
+            if (digits >= 7 && digits <= 15) {
+                valid_end = curr;
             }
+        } else if (c == ' ' || c == '.' || c == '-' || c == '(' || c == ')') {
+            if (counting_first && first_chunk > 0) counting_first = false;
+            curr++;
+        } else if ((c == 'x' || c == 'X') && digits >= 7) {
+            curr++;
+            bool ext_digits = false;
+            while (curr < s.size() && is_digit(s[curr])) {
+                ext_digits = true;
+                digits++;
+                curr++;
+            }
+            if (ext_digits && digits <= 15) {
+                valid_end = curr;
+            }
+            break;
         } else {
-            curr = pos;
+            break;
         }
     }
     
-    if (curr < s.size() && s[curr] == '(') curr++;
+    if (first_chunk == 4 || first_chunk == 8) return 0; // Reject 2021-xx-xx dates
+    if (valid_end > 0) return valid_end - pos;
     
-    std::size_t start = curr;
-    while (curr < s.size() && is_digit(s[curr])) curr++;
-    std::size_t len = curr - start;
-    if (len < 2 || len > 4) return 0;
-    
-    if (curr < s.size() && s[curr] == ')') curr++;
-    
-    if (curr >= s.size() || (s[curr] != ' ' && s[curr] != '.' && s[curr] != '-')) return 0;
-    curr++;
-    
-    start = curr;
-    while (curr < s.size() && is_digit(s[curr])) curr++;
-    len = curr - start;
-    if (len < 3 || len > 4) return 0;
-    
-    if (curr >= s.size() || (s[curr] != ' ' && s[curr] != '.' && s[curr] != '-')) return 0;
-    curr++;
-    
-    start = curr;
-    while (curr < s.size() && is_digit(s[curr])) curr++;
-    len = curr - start;
-    if (len != 4) return 0;
-    
-    return curr - pos;
+    return 0;
 }
 
 std::size_t parse_ipv6(std::string_view s, std::size_t pos) noexcept {
@@ -274,8 +309,8 @@ bool Matcher::has_clean_boundary(std::string_view input, std::size_t match_start
     return true;
 }
 
-std::string Matcher::scrub(std::string_view input) const {
-    if (input.empty()) return std::string{};
+std::optional<std::string> Matcher::scrub(std::string_view input) const {
+    if (input.empty()) return std::nullopt;
 
     struct PiiInterval {
         std::size_t start;
@@ -346,6 +381,7 @@ std::string Matcher::scrub(std::string_view input) const {
                 else if ((match_len = parse_ipv4(input, i)) > 0) { mask = "[REDACTED_IP]"; }
                 else if ((match_len = parse_ssn(input, i)) > 0) { mask = "[REDACTED_SSN]"; }
                 else if ((match_len = parse_phone(input, i)) > 0) { mask = "[REDACTED_PHONE]"; }
+                else if ((match_len = parse_id_num(input, i)) > 0) { mask = "[REDACTED_ID]"; }
             }
 
             if (match_len > 0) {
@@ -363,7 +399,7 @@ std::string Matcher::scrub(std::string_view input) const {
     }
 
     if (intervals.empty()) {
-        return std::string(input);
+        return std::nullopt; // ZERO COPY!
     }
 
     // Pre-calculate exactly how large the redacted string will be to avoid reallocation

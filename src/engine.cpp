@@ -18,7 +18,7 @@ Engine::Engine(unsigned worker_count)
     }
 }
 
-std::string Engine::scrub(std::string_view input) const {
+std::optional<std::string> Engine::scrub(std::string_view input) const {
     return matcher_.scrub(input);
 }
 
@@ -33,9 +33,9 @@ std::size_t Engine::snap_to_whitespace(std::string_view input, std::size_t pos) 
     return input.size();
 }
 
-std::string Engine::scrub_bulk(std::string_view input) const {
+std::optional<std::string> Engine::scrub_bulk(std::string_view input) const {
     if (input.empty()) {
-        return "";
+        return std::nullopt;
     }
     
     // Fast path for small inputs or single worker
@@ -65,7 +65,7 @@ std::string Engine::scrub_bulk(std::string_view input) const {
         chunks.push_back(input.substr(current_pos));
     }
 
-    std::vector<std::string> results(chunks.size());
+    std::vector<std::optional<std::string>> results(chunks.size());
     
     {
         std::vector<std::jthread> threads;
@@ -80,14 +80,28 @@ std::string Engine::scrub_bulk(std::string_view input) const {
     }
 
     std::size_t total_length = 0;
-    for (const auto& r : results) {
-        total_length += r.size();
+    bool any_modified = false;
+    for (std::size_t i = 0; i < chunks.size(); ++i) {
+        if (results[i].has_value()) {
+            total_length += results[i]->size();
+            any_modified = true;
+        } else {
+            total_length += chunks[i].size();
+        }
+    }
+    
+    if (!any_modified) {
+        return std::nullopt;
     }
     
     std::string combined;
     combined.reserve(total_length);
-    for (const auto& r : results) {
-        combined.append(r);
+    for (std::size_t i = 0; i < chunks.size(); ++i) {
+        if (results[i].has_value()) {
+            combined.append(*results[i]);
+        } else {
+            combined.append(chunks[i]);
+        }
     }
     
     return combined;
