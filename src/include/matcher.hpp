@@ -2,6 +2,9 @@
 #include <string>
 #include <string_view>
 #include <optional>
+#include <vector>
+
+#include "pii_interval.hpp"
 
 namespace fastscrub {
 
@@ -14,6 +17,15 @@ public:
     /// Input is read via string_view (zero-copy); returns a new std::string
     /// with replacements applied.
     std::optional<std::string> scrub(std::string_view input) const;
+
+    /// Scan the input for PII/secret intervals WITHOUT modifying it.
+    /// Appends detected intervals to `out`. Returns true if any PII was found.
+    bool scan(std::string_view input, std::vector<PiiInterval>& out) const;
+
+    /// Scrub PII in-place by overwriting detected regions with '*'.
+    /// Zero allocation — mutates the buffer directly.
+    /// For secrets with prefix_len > 0, the prefix is preserved.
+    void scrub_inplace(char* data, std::size_t len) const;
 
 private:
 

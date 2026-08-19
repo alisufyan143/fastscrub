@@ -8,7 +8,8 @@ A radically high-performance, zero-allocation Personally Identifiable Informatio
 
 - **Blazing Fast**: Achieves **~30 MB/s** throughput on single-core, scaling linearly with multi-threading.
 - **Zero Lock Contention**: The `scrub_batch` API safely drops the Python Global Interpreter Lock (GIL) and utilizes native `std::jthread` thread pools to process massive data payloads across all available CPU cores.
-- **Zero-Allocation Parsing**: Extracts entities using highly optimized `std::string_view` boundary isolation.
+- **Overlap-Aware Concurrency**: Features a mathematically exact 2048-byte chunk overlapping system, guaranteeing that massive secrets (like 800-byte JWTs) are never fractured or missed across thread boundaries.
+- **Zero-Allocation Parsing**: Extracts entities using highly optimized `std::string_view` boundary isolation. Includes a zero-allocation `scrub_inplace()` Mode B that directly mutates Python `bytearray` buffers in RAM.
 - **Industrial Grade Validation**: Heavily benchmarked against the **Microsoft Presidio** dataset and the **Kaggle PII Data Detection** student essay corpus, ensuring rigorous precision and recall calculations against ground-truth labels.
 - **Modern Architecture**: Uses `nanobind` for lightweight C++ bindings and `scikit-build-core` with a standard Python `src/` layout to completely prevent import shadowing.
 
@@ -58,8 +59,35 @@ for log in safe_logs:
     print(log)
 ```
 
+### Zero-Allocation In-Place Mutation (Mode B)
+For extreme memory efficiency, you can mutate a Python `bytearray` directly in RAM. `fastscrub` will precisely overwrite the sensitive parts of the secret with `*` while preserving helpful context (like JWT headers or DB schemas).
+
+```python
+from fastscrub import scrub_inplace
+
+# Must be a mutable bytearray
+buf = bytearray(b"Auth: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2Vy..._sig")
+scrub_inplace(buf)
+
+print(buf.decode('utf-8'))
+# Output: "Auth: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.****************"
+```
+
 ## Supported PII Types
-Currently, `fastscrub` strictly isolates and redacts structural and pattern-based PII:
+Currently, `fastscrub` strictly isolates and redacts structural PII and high-entropy infrastructure secrets.
+
+### Infrastructure Secrets
+- `[REDACTED_AWS_KEY]`: AWS Access Keys
+- `[REDACTED_GCP_KEY]`: GCP API Keys
+- `[REDACTED_GITHUB_TOKEN]`: GitHub Personal Access Tokens (Classic and Fine-Grained)
+- `[REDACTED_SLACK_TOKEN]`: Slack Bot/User Tokens
+- `[REDACTED_STRIPE_KEY]`: Stripe API Keys (Live & Test)
+- `[REDACTED_JWT]`: JSON Web Tokens
+- `[REDACTED_PRIVATE_KEY]`: RSA/SSH Private Keys
+- `[REDACTED_DB_CONN]`: Database Connection Strings (Masks password only in Mode B)
+- `[REDACTED_SECRET]`: Generic High-Entropy K/V Secrets
+
+### Structural PII
 - `[REDACTED_EMAIL]`: Email Addresses
 - `[REDACTED_IP]`: IPv4 & IPv6 Addresses
 - `[REDACTED_MAC]`: MAC Addresses

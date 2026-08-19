@@ -2,7 +2,9 @@
 
 #include <thread>
 #include <vector>
-#include <cctype>
+#include <algorithm>
+#include <cstring>
+#include <atomic>
 
 namespace fastscrub {
 
@@ -22,15 +24,103 @@ std::optional<std::string> Engine::scrub(std::string_view input) const {
     return matcher_.scrub(input);
 }
 
-std::size_t Engine::snap_to_whitespace(std::string_view input, std::size_t pos) noexcept {
-    while (pos < input.size()) {
-        char c = input[pos];
-        if (c == ' ' || c == '\n' || c == '\r' || c == '\t' || c == '\v' || c == '\f') {
-            return pos;
-        }
-        ++pos;
+void Engine::scrub_inplace(char* data, std::size_t len) const {
+    matcher_.scrub_inplace(data, len);
+}
+
+std::vector<ChunkRange> Engine::compute_chunks(
+    std::size_t input_size, unsigned workers) noexcept
+{
+    std::vector<ChunkRange> chunks;
+    if (input_size == 0 || workers == 0) return chunks;
+
+    std::size_t chunk_size = input_size / workers;
+    if (chunk_size == 0) chunk_size = input_size;
+
+    chunks.reserve(workers);
+    for (unsigned i = 0; i < workers; ++i) {
+        ChunkRange c;
+        c.start = i * chunk_size;
+        c.end = (i == workers - 1) ? input_size : (i + 1) * chunk_size;
+        c.scan_end = std::min(c.end + OVERLAP, input_size);
+        if (c.start >= input_size) break;
+        chunks.push_back(c);
     }
-    return input.size();
+    return chunks;
+}
+
+void Engine::merge_intervals(std::vector<PiiInterval>& intervals) noexcept {
+    if (intervals.empty()) return;
+
+    std::sort(intervals.begin(), intervals.end());
+
+    std::vector<PiiInterval> merged;
+    merged.reserve(intervals.size());
+    merged.push_back(intervals[0]);
+
+    for (std::size_t i = 1; i < intervals.size(); ++i) {
+        auto& prev = merged.back();
+        const auto& curr = intervals[i];
+
+        // Duplicate or overlapping interval
+        if (curr.start < prev.start + prev.len) {
+            std::size_t new_end = std::max(prev.start + prev.len, curr.start + curr.len);
+            // Keep the mask of the longer match
+            if (curr.len > prev.len) {
+                prev.mask = curr.mask;
+                prev.inplace_offset = curr.inplace_offset;
+                prev.inplace_len = curr.inplace_len;
+            }
+            prev.len = new_end - prev.start;
+        } else {
+            merged.push_back(curr);
+        }
+    }
+
+    intervals = std::move(merged);
+}
+
+std::vector<PiiInterval> Engine::scan_bulk_intervals(std::string_view input) const {
+    auto chunks = compute_chunks(input.size(), workers_);
+    if (chunks.empty()) {
+        std::vector<PiiInterval> local_intervals;
+        local_intervals.reserve(256);
+        matcher_.scan(input, local_intervals);
+        return local_intervals;
+    }
+
+    std::vector<std::vector<PiiInterval>> thread_intervals(chunks.size());
+
+    {
+        std::vector<std::jthread> threads;
+        threads.reserve(chunks.size());
+        for (std::size_t i = 0; i < chunks.size(); ++i) {
+            threads.emplace_back([this, &input, &chunks, &thread_intervals, i]() {
+                std::string_view chunk_view = input.substr(chunks[i].start, chunks[i].scan_end - chunks[i].start);
+                std::vector<PiiInterval> local_intervals;
+                local_intervals.reserve(256);
+                matcher_.scan(chunk_view, local_intervals);
+                
+                for (auto& iv : local_intervals) {
+                    iv.start += chunks[i].start;
+                }
+                thread_intervals[i] = std::move(local_intervals);
+            });
+        }
+    }
+
+    std::vector<PiiInterval> all_intervals;
+    std::size_t total = 0;
+    for (const auto& ti : thread_intervals) total += ti.size();
+    all_intervals.reserve(total);
+    for (auto& ti : thread_intervals) {
+        all_intervals.insert(all_intervals.end(), ti.begin(), ti.end());
+    }
+
+    if (!all_intervals.empty()) {
+        merge_intervals(all_intervals);
+    }
+    return all_intervals;
 }
 
 std::optional<std::string> Engine::scrub_bulk(std::string_view input) const {
@@ -43,68 +133,60 @@ std::optional<std::string> Engine::scrub_bulk(std::string_view input) const {
         return matcher_.scrub(input);
     }
 
-    std::size_t chunk_size = input.size() / workers_;
-    std::vector<std::string_view> chunks;
-    chunks.reserve(workers_);
+    auto all_intervals = scan_bulk_intervals(input);
 
-    std::size_t current_pos = 0;
-    for (unsigned i = 0; i < workers_ - 1; ++i) {
-        std::size_t target_pos = current_pos + chunk_size;
-        if (target_pos >= input.size()) {
-            break;
-        }
-        
-        std::size_t end_pos = snap_to_whitespace(input, target_pos);
-        if (end_pos > current_pos) {
-            chunks.push_back(input.substr(current_pos, end_pos - current_pos));
-            current_pos = end_pos;
-        }
-    }
-    
-    if (current_pos < input.size()) {
-        chunks.push_back(input.substr(current_pos));
-    }
-
-    std::vector<std::optional<std::string>> results(chunks.size());
-    
-    {
-        std::vector<std::jthread> threads;
-        threads.reserve(chunks.size());
-        for (std::size_t i = 0; i < chunks.size(); ++i) {
-            threads.emplace_back([this, &chunks, &results, i]() {
-                results[i] = matcher_.scrub(chunks[i]);
-            });
-        }
-        // std::jthread automatically joins on destruction.
-        // Leaving this scope ensures all threads have completed.
-    }
-
-    std::size_t total_length = 0;
-    bool any_modified = false;
-    for (std::size_t i = 0; i < chunks.size(); ++i) {
-        if (results[i].has_value()) {
-            total_length += results[i]->size();
-            any_modified = true;
-        } else {
-            total_length += chunks[i].size();
-        }
-    }
-    
-    if (!any_modified) {
+    if (all_intervals.empty()) {
         return std::nullopt;
     }
-    
-    std::string combined;
-    combined.reserve(total_length);
-    for (std::size_t i = 0; i < chunks.size(); ++i) {
-        if (results[i].has_value()) {
-            combined.append(*results[i]);
-        } else {
-            combined.append(chunks[i]);
+
+    // Assemble output string
+    std::size_t final_size = input.size();
+    for (const auto& iv : all_intervals) {
+        final_size -= iv.len;
+        final_size += iv.mask.size();
+    }
+
+    std::string result;
+    result.reserve(final_size);
+
+    std::size_t cursor = 0;
+    for (const auto& iv : all_intervals) {
+        if (iv.start > cursor) {
+            result.append(input.data() + cursor, iv.start - cursor);
+        }
+        result.append(iv.mask.data(), iv.mask.size());
+        cursor = iv.start + iv.len;
+    }
+    if (cursor < input.size()) {
+        result.append(input.data() + cursor, input.size() - cursor);
+    }
+
+    return result;
+}
+
+void Engine::scrub_bulk_inplace(char* data, std::size_t len) const {
+    if (len == 0 || data == nullptr) return;
+
+    // Fast path for small inputs or single worker
+    if (workers_ <= 1 || len < 4096) {
+        matcher_.scrub_inplace(data, len);
+        return;
+    }
+
+    std::string_view view(data, len);
+    auto all_intervals = scan_bulk_intervals(view);
+
+    if (all_intervals.empty()) return;
+
+    // Single-threaded memset pass — no cache-line bouncing
+    for (const auto& iv : all_intervals) {
+        if (iv.inplace_len > 0) {
+            std::size_t mask_start = iv.start + iv.inplace_offset;
+            if (mask_start + iv.inplace_len <= len) {
+                std::memset(data + mask_start, '*', iv.inplace_len);
+            }
         }
     }
-    
-    return combined;
 }
 
 } // namespace fastscrub

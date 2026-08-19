@@ -12,6 +12,16 @@
 namespace nb = nanobind;
 using namespace fastscrub;
 
+inline nb::object optional_string_to_py(const std::optional<std::string>& out, nb::handle original) {
+    if (out.has_value()) {
+        PyObject* py_s = PyUnicode_DecodeUTF8(out->data(), (Py_ssize_t)out->size(), "replace");
+        if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
+        return nb::steal<nb::str>(py_s);
+    } else {
+        return nb::borrow<nb::object>(original); // ZERO COPY!
+    }
+}
+
 NB_MODULE(fastscrub_backend, m) {
     m.doc() = "High-performance PII scrubbing C++ backend";
 
@@ -23,13 +33,7 @@ NB_MODULE(fastscrub_backend, m) {
         .def("scrub", [](const Engine& engine, nb::str py_input) {
             std::string_view input = nb::cast<std::string_view>(py_input);
             auto out = engine.scrub(input);
-            if (out.has_value()) {
-                PyObject* py_s = PyUnicode_DecodeUTF8(out->data(), (Py_ssize_t)out->size(), "replace");
-                if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
-                return nb::steal<nb::str>(py_s);
-            } else {
-                return py_input; // ZERO COPY!
-            }
+            return optional_string_to_py(out, py_input);
         }, nb::arg("input"), "Scrub a single string sequentially.")
              
         // Parallel bulk scrub with GIL released
@@ -40,15 +44,28 @@ NB_MODULE(fastscrub_backend, m) {
                 nb::gil_scoped_release release;
                 out = engine.scrub_bulk(input);
             }
-            if (out.has_value()) {
-                PyObject* py_s = PyUnicode_DecodeUTF8(out->data(), (Py_ssize_t)out->size(), "replace");
-                if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
-                return nb::steal<nb::str>(py_s);
-            } else {
-                return py_input; // ZERO COPY!
-            }
+            return optional_string_to_py(out, py_input);
         }, nb::arg("input"),
-        "Scrub a large text buffer in parallel, safely releasing the GIL.");
+        "Scrub a large text buffer in parallel, safely releasing the GIL.")
+
+        // In-place scrub (Mode B) — zero allocation, mutates bytearray directly
+        .def("scrub_inplace", [](const Engine& engine, nb::object py_buf) {
+            char* data = PyByteArray_AS_STRING(py_buf.ptr());
+            Py_ssize_t len = PyByteArray_GET_SIZE(py_buf.ptr());
+            engine.scrub_inplace(data, static_cast<std::size_t>(len));
+        }, nb::arg("buffer"),
+        "Scrub PII in-place by overwriting with '*'. Zero allocation.")
+
+        // Parallel in-place scrub — GIL released
+        .def("scrub_bulk_inplace", [](const Engine& engine, nb::object py_buf) {
+            char* data = PyByteArray_AS_STRING(py_buf.ptr());
+            Py_ssize_t len = PyByteArray_GET_SIZE(py_buf.ptr());
+            {
+                nb::gil_scoped_release release;
+                engine.scrub_bulk_inplace(data, static_cast<std::size_t>(len));
+            }
+        }, nb::arg("buffer"),
+        "Scrub PII in-place in parallel, safely releasing the GIL.");
 
     // Zero-copy, GIL-free Batch Processing
     m.def("scrub_batch", [](nb::list py_list, unsigned worker_count) {
@@ -89,13 +106,7 @@ NB_MODULE(fastscrub_backend, m) {
         // 4. Zero-Copy return logic
         nb::list py_out;
         for (size_t i = 0; i < outputs.size(); ++i) {
-            if (outputs[i].has_value()) {
-                PyObject* py_s = PyUnicode_DecodeUTF8(outputs[i]->data(), (Py_ssize_t)outputs[i]->size(), "replace");
-                if (!py_s) throw std::runtime_error("Failed to decode string to Python UTF-8");
-                py_out.append(nb::steal<nb::str>(py_s));
-            } else {
-                py_out.append(py_handles[i]); // ZERO COPY!
-            }
+            py_out.append(optional_string_to_py(outputs[i], py_handles[i]));
         }
 
         return py_out;

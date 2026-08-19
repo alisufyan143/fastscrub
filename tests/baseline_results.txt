@@ -1,0 +1,16 @@
+FASTSCRUB v1.0 BASELINE
+=======================
+Date: 2026-08-19
+Git: pre-refactor baseline
+
+TEST RESULTS: 53/53 passed in 1.06s
+Platform: Windows 10 / MinGW / Python 3.11.15
+
+All test classes passed:
+- TestFunctionalRedaction: 17/17
+- TestLuhnCreditCard: 6/6
+- TestNullBytePoisoning: 5/5
+- TestCatastrophicBacktracking: 4/4
+- TestTokenBoundaryIsolation: 8/8
+- TestLineEndings: 5/5
+- TestMessyProductionLogs: 8/8

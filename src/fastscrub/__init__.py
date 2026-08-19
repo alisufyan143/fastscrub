@@ -30,3 +30,19 @@ def scrub_list(text_list: list[str]) -> list[str]:
     if not isinstance(text_list, list):
         raise TypeError("Input must be a list of strings.")
     return scrub_batch(text_list, 0)
+
+def scrub_inplace(data: bytearray) -> None:
+    """
+    Scrub PII in-place. The input bytearray is mutated directly.
+    Zero allocation — no new string objects are created.
+    Detected PII regions are overwritten with '*' characters.
+    Buffer length is preserved.
+    """
+    if not isinstance(data, bytearray):
+        raise TypeError(f"scrub_inplace requires bytearray, got {type(data).__name__}")
+    
+    # Route to parallel path for large buffers
+    if len(data) >= 16384:
+        _ENGINE.scrub_bulk_inplace(data)
+    else:
+        _ENGINE.scrub_inplace(data)
