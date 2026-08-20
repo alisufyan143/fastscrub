@@ -35,6 +35,12 @@ compile_commands.json
 .ninja_log
 build.ninja
 .cmake/
+CMakeInit.txt
+.skbuild-info.json
+*.a
+*.exe
+*.lib
+*.dll
 
 # Testing
 .pytest_cache/
@@ -42,6 +48,7 @@ tests/data/*.json
 tests/data/*.jsonl
 tests/data/*.parquet
 tests/data/*.txt
+tests/data/secrets/
 !tests/data/.keep
 
 # Environments
@@ -56,3 +63,5 @@ venv.bak/
 # IDEs
 .vscode/
 .idea/
+Thunderbird.tar.gz
+tests/data/Thunderbird.log

@@ -18,6 +18,8 @@ nanobind_add_module(fastscrub_backend
     src/main.cpp
     src/engine.cpp
     src/matcher.cpp
+    src/swar_scanner.cpp
+    src/secret_parsers.cpp
 )
 
 if(WIN32 AND NOT MSVC)
@@ -27,3 +29,13 @@ if(WIN32 AND NOT MSVC)
 endif()
 
 install(TARGETS fastscrub_backend DESTINATION fastscrub)
+
+option(FASTSCRUB_BUILD_BENCHMARKS "Build C++ microbenchmarks" OFF)
+
+if(FASTSCRUB_BUILD_BENCHMARKS)
+    add_executable(bench_matcher bench/bench_matcher.cpp src/engine.cpp src/matcher.cpp src/swar_scanner.cpp src/secret_parsers.cpp)
+    target_link_libraries(bench_matcher PRIVATE stdc++)
+    if(NOT MSVC)
+        target_compile_options(bench_matcher PRIVATE -O3 -march=native)
+    endif()
+endif()
