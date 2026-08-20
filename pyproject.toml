@@ -5,10 +5,86 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "fastscrub"
 version = "0.1.0"
-description = "High-performance PII scrubbing engine with C++20 backend and Python bindings."
-requires-python = ">=3.8"
+description = "Ultra high-performance zero-allocation PII and Secrets redaction engine powered by C++20 and SWAR vectorization."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Ali Sufyan", email = "alisufyan3333@gmail.com" }
+]
+keywords = [
+    "pii",
+    "redaction",
+    "sanitization",
+    "security",
+    "secrets",
+    "compliance",
+    "gdpr",
+    "hipaa",
+    "swar",
+    "simd",
+    "performance"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Text Processing :: Filters",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+
+[project.urls]
+Homepage = "https://github.com/alisufyan143/fastscrub"
+Documentation = "https://alisufyan143.github.io/fastscrub/"
+Repository = "https://github.com/alisufyan143/fastscrub.git"
+Issues = "https://github.com/alisufyan143/fastscrub/issues"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-cmake.args = ["-GNinja", "-DCMAKE_CXX_COMPILER=g++", "-DCMAKE_C_COMPILER=gcc"]
+cmake.args = ["-GNinja"]
 editable.mode = "inplace"
+
+[tool.scikit-build.sdist]
+reproducible = false
+include = [
+    "src/**",
+    "CMakeLists.txt",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+    "tests/*.py",
+    "tests/data/secrets/trufflehog_ground_truth.json"
+]
+exclude = [
+    "tests/data/*.log",
+    "tests/data/*.json",
+    "tests/data/*.jsonl",
+    "*.log"
+]
+
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-*"
+skip = "*-win32 *i686 pp* *_universal2"
+test-requires = ["pytest"]
+test-command = "pytest {project}/tests -v"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+musllinux-x86_64-image = "musllinux_1_2"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]

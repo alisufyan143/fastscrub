@@ -1,0 +1,8 @@
+graft src
+include CMakeLists.txt
+include pyproject.toml
+include README.md
+include LICENSE
+graft tests
+prune tests/data
+global-exclude *.log *.jsonl *.zip __pycache__ *.pyd *.pyc
