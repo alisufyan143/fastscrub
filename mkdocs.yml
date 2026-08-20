@@ -1,0 +1,91 @@
+site_name: fastscrub
+site_description: "Ultra high-performance zero-allocation PII and Secrets redaction engine powered by C++20 and SWAR vectorization."
+site_author: "Ali Sufyan"
+site_url: "https://alisufyan143.github.io/fastscrub/"
+repo_name: "alisufyan143/fastscrub"
+repo_url: "https://github.com/alisufyan143/fastscrub"
+edit_uri: "edit/main/docs/"
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Quickstart (5 Minutes): getting-started/quickstart.md
+      - Installation: getting-started/installation.md
+  - Core Guides:
+      - Operational Modes (A vs B vs Batch): guides/modes.md
+      - Production Logs & Big Data: guides/production_logs.md
+  - Supported Detectors:
+      - Structural PII: detectors/pii.md
+      - Cloud & Infra Secrets: detectors/secrets.md
+  - Architecture Deep-Dive:
+      - 64-Bit SWAR Vectorization: architecture/swar_vectorization.md
+      - Overlap-Aware Multi-Threading: architecture/multi_threading.md
+  - Benchmark Matrices:
+      - Industrial Ground Truth (137k+ Docs): benchmarks/ground_truth.md
+      - 57 GB Multi-Domain Throughput: benchmarks/throughput.md
+  - API Reference: api/reference.md
