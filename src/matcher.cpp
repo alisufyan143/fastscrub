@@ -363,12 +363,31 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
 
         // 2. Center-Out Parsers anchored on '_' (GitHub, Stripe)
         else if (c == '_') {
-            if ((match_len = secrets::parse_github_token(input, i, match_start)) > 0) {
+            bool is_github = false;
+            if (i >= 3) {
+                if (input[i-3] == 'g' && input[i-2] == 'h' && 
+                    (input[i-1] == 'p' || input[i-1] == 'o' || input[i-1] == 'u' || input[i-1] == 's' || input[i-1] == 'r')) {
+                    is_github = true;
+                } else if (i >= 10 && input.substr(i-10, 11) == "github_pat_") {
+                    is_github = true;
+                }
+            }
+            if (is_github && (match_len = secrets::parse_github_token(input, i, match_start)) > 0) {
                 std::size_t prefix = (match_len >= 22 && input.substr(match_start, 11) == "github_pat_") ? 11 : 4;
                 intervals.push_back({match_start, match_len, "[REDACTED_GITHUB_TOKEN]", prefix, match_len - prefix});
                 i = match_start + match_len; continue;
             }
-            if ((match_len = secrets::parse_stripe_key(input, i, match_start)) > 0) {
+
+            bool is_stripe = false;
+            if (i >= 2) {
+                char p1 = input[i-2], p2 = input[i-1];
+                if ((p1 == 's' || p1 == 'p' || p1 == 'r') && p2 == 'k') {
+                    is_stripe = true;
+                } else if (i >= 7 && (input.substr(i-5, 5) == "_live" || input.substr(i-5, 5) == "_test")) {
+                    is_stripe = true;
+                }
+            }
+            if (is_stripe && (match_len = secrets::parse_stripe_key(input, i, match_start)) > 0) {
                 intervals.push_back({match_start, match_len, "[REDACTED_STRIPE_KEY]", 8, match_len - 8});
                 i = match_start + match_len; continue;
             }
@@ -383,54 +402,75 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
                 continue;
             }
 
-            if ((match_len = secrets::parse_private_key(input, i)) > 0) {
-                intervals.push_back({i, match_len, "[REDACTED_PRIVATE_KEY]", 0, match_len});
-                i += match_len; continue;
-            }
-            if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
-                intervals.push_back({match_start, match_len, "[REDACTED_SLACK_TOKEN]", 5, match_len - 5});
-                i = match_start + match_len; continue;
-            }
-            
-            // Structural PII fallbacks
-            std::size_t start = i;
-            while (start > 0 && i - start < 8 && is_hex(input[start - 1])) start--;
-            if ((match_len = parse_uuid(input, start)) > 0 && start + match_len > i) {
-                match_start = start; mask = "[REDACTED_UUID]"; inplace_len = match_len;
-            }
-            if (match_len == 0) {
-                start = i;
-                while (start > 0 && i - start < 2 && is_hex(input[start - 1])) start--;
-                if ((match_len = parse_mac(input, start)) > 0 && start + match_len > i) {
-                    match_start = start; mask = "[REDACTED_MAC]"; inplace_len = match_len;
+            // Private key requires "-----"
+            if (i + 15 < len && input.substr(i, 5) == "-----") {
+                if ((match_len = secrets::parse_private_key(input, i)) > 0) {
+                    intervals.push_back({i, match_len, "[REDACTED_PRIVATE_KEY]", 0, match_len});
+                    i += match_len; continue;
                 }
             }
-            if (match_len == 0) {
-                start = i;
-                while (start > 0 && i - start < 4 && is_digit(input[start - 1])) start--;
-                if ((match_len = parse_credit_card(input, start)) > 0 && start + match_len > i) {
-                    match_start = start; mask = "[REDACTED_CREDIT_CARD]"; inplace_len = match_len; requires_luhn = true;
-                } else if ((match_len = parse_ssn(input, start)) > 0 && start + match_len > i) {
-                    match_start = start; mask = "[REDACTED_SSN]"; inplace_len = match_len;
-                } else if ((match_len = parse_phone(input, start)) > 0 && start + match_len > i) {
-                    match_start = start; mask = "[REDACTED_PHONE]"; inplace_len = match_len;
+
+            // Slack token requires "xox"
+            if (i >= 4 && input[i-4] == 'x' && input[i-3] == 'o' && input[i-2] == 'x' &&
+                (input[i-1] == 'b' || input[i-1] == 'p' || input[i-1] == 'a' || input[i-1] == 'r')) {
+                if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
+                    intervals.push_back({match_start, match_len, "[REDACTED_SLACK_TOKEN]", 5, match_len - 5});
+                    i = match_start + match_len; continue;
+                }
+            }
+            
+            // Structural PII fallbacks: MUST be preceded by hex or digit
+            if (i > 0) {
+                char prev = input[i - 1];
+                if (is_hex(prev)) {
+                    std::size_t start = i;
+                    while (start > 0 && i - start < 8 && is_hex(input[start - 1])) start--;
+                    if (i - start == 8 && (match_len = parse_uuid(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; mask = "[REDACTED_UUID]"; inplace_len = match_len;
+                    }
+                    if (match_len == 0 && i - start <= 2) {
+                        if ((match_len = parse_mac(input, start)) > 0 && start + match_len > i) {
+                            match_start = start; mask = "[REDACTED_MAC]"; inplace_len = match_len;
+                        }
+                    }
+                }
+                if (match_len == 0 && is_digit(prev)) {
+                    std::size_t start = i;
+                    while (start > 0 && i - start < 4 && is_digit(input[start - 1])) start--;
+                    if ((match_len = parse_credit_card(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; mask = "[REDACTED_CREDIT_CARD]"; inplace_len = match_len; requires_luhn = true;
+                    } else if ((match_len = parse_ssn(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; mask = "[REDACTED_SSN]"; inplace_len = match_len;
+                    } else if ((match_len = parse_phone(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; mask = "[REDACTED_PHONE]"; inplace_len = match_len;
+                    }
                 }
             }
         }
 
         // 4. Center-Out Parsers anchored on '.' (JWT, IPv4)
         else if (c == '.') {
-            auto jwt = secrets::parse_jwt(input, i, match_start);
-            if (jwt.total_len > 0) {
-                std::size_t offset = jwt.header_len + 1; 
-                intervals.push_back({match_start, jwt.total_len, "[REDACTED_JWT]", offset, jwt.total_len - offset});
-                i = match_start + jwt.total_len; continue;
+            // JWT: check for "eyJ" in header segment before calling parse_jwt
+            if (i >= 4) {
+                std::size_t back = i;
+                while (back > 0 && i - back < 256 && (std::isalnum(static_cast<unsigned char>(input[back - 1])) || input[back - 1] == '-' || input[back - 1] == '_')) back--;
+                if (i - back >= 3 && input[back] == 'e' && input[back+1] == 'y' && input[back+2] == 'J') {
+                    auto jwt = secrets::parse_jwt(input, i, match_start);
+                    if (jwt.total_len > 0) {
+                        std::size_t offset = jwt.header_len + 1; 
+                        intervals.push_back({match_start, jwt.total_len, "[REDACTED_JWT]", offset, jwt.total_len - offset});
+                        i = match_start + jwt.total_len; continue;
+                    }
+                }
             }
             
-            std::size_t start = i;
-            while (start > 0 && i - start < 3 && is_digit(input[start - 1])) start--;
-            if (start < i && (match_len = parse_ipv4(input, start)) > 0 && start + match_len > i) {
-                match_start = start; mask = "[REDACTED_IP]"; inplace_len = match_len;
+            // IPv4: requires digit before '.' AND digit after '.'
+            if (i > 0 && is_digit(input[i - 1]) && i + 1 < len && is_digit(input[i + 1])) {
+                std::size_t start = i;
+                while (start > 0 && i - start < 3 && is_digit(input[start - 1])) start--;
+                if (start < i && (match_len = parse_ipv4(input, start)) > 0 && start + match_len > i) {
+                    match_start = start; mask = "[REDACTED_IP]"; inplace_len = match_len;
+                }
             }
         }
 
@@ -444,23 +484,29 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
                 continue;
             }
 
-            std::size_t pw_start = 0, pw_len = 0;
-            if ((match_len = secrets::parse_connection_string(input, i, pw_start, pw_len)) > 0) {
-                std::size_t scheme_start = i;
-                while (scheme_start > 0 && std::isalpha(static_cast<unsigned char>(input[scheme_start - 1]))) scheme_start--;
-                intervals.push_back({scheme_start, match_len, "[REDACTED_DB_CONN]", pw_start - scheme_start, pw_len});
-                i = scheme_start + match_len; continue;
+            // Connection string: strictly requires "://"
+            if (i + 2 < len && input[i+1] == '/' && input[i+2] == '/') {
+                std::size_t pw_start = 0, pw_len = 0;
+                if ((match_len = secrets::parse_connection_string(input, i, pw_start, pw_len)) > 0) {
+                    std::size_t scheme_start = i;
+                    while (scheme_start > 0 && std::isalpha(static_cast<unsigned char>(input[scheme_start - 1]))) scheme_start--;
+                    intervals.push_back({scheme_start, match_len, "[REDACTED_DB_CONN]", pw_start - scheme_start, pw_len});
+                    i = scheme_start + match_len; continue;
+                }
             }
 
-            std::size_t start = i;
-            while (start > 0 && i - start < 4 && is_hex(input[start - 1])) start--;
-            if ((match_len = parse_ipv6(input, start)) > 0 && start + match_len > i) {
-                match_start = start; mask = "[REDACTED_IP]"; inplace_len = match_len;
-            } else {
-                start = i;
-                while (start > 0 && i - start < 2 && is_hex(input[start - 1])) start--;
-                if ((match_len = parse_mac(input, start)) > 0 && start + match_len > i) {
-                    match_start = start; mask = "[REDACTED_MAC]"; inplace_len = match_len;
+            // IPv6 / MAC: strictly requires hex on BOTH sides (or compressed ::)
+            if (i > 0 && (is_hex(input[i-1]) || (i + 1 < len && input[i+1] == ':'))) {
+                std::size_t start = i;
+                while (start > 0 && i - start < 4 && is_hex(input[start - 1])) start--;
+                if ((match_len = parse_ipv6(input, start)) > 0 && start + match_len > i) {
+                    match_start = start; mask = "[REDACTED_IP]"; inplace_len = match_len;
+                } else if (i + 1 < len && is_hex(input[i+1])) {
+                    start = i;
+                    while (start > 0 && i - start < 2 && is_hex(input[start - 1])) start--;
+                    if ((match_len = parse_mac(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; mask = "[REDACTED_MAC]"; inplace_len = match_len;
+                    }
                 }
             }
         }
@@ -603,24 +649,295 @@ std::optional<std::string> Matcher::scrub(std::string_view input) const {
 }
 
 // ---------------------------------------------------------------------------
-// scrub_inplace(): Mode B — zero-allocation in-place mutation with '*'.
+// scrub_inplace(): Mode B — TRUE ZERO-ALLOCATION direct in-place mutation with '*'.
+// Completely eliminates std::vector heap allocations and sorting overhead.
 // ---------------------------------------------------------------------------
 void Matcher::scrub_inplace(char* data, std::size_t len) const {
     if (len == 0 || data == nullptr) return;
 
-    std::string_view view(data, len);
-    std::vector<PiiInterval> intervals;
-    intervals.reserve(1024);
+    std::string_view input(data, len);
+    std::size_t i = 0;
 
-    if (!scan(view, intervals)) return;
+    while (i < len) {
+#ifndef FASTSCRUB_FORCE_SCALAR
+        i = SwarScanner::find_next_anchor(data, len, i);
+        if (i >= len) break;
+#endif
 
-    for (const auto& iv : intervals) {
-        if (iv.inplace_len > 0) {
-            std::size_t mask_start = iv.start + iv.inplace_offset;
-            if (mask_start + iv.inplace_len <= len) {
-                std::memset(data + mask_start, '*', iv.inplace_len);
+        char c = data[i];
+        std::size_t match_start = 0;
+        std::size_t match_len = 0;
+        std::size_t inplace_offset = 0;
+        std::size_t inplace_len = 0;
+        bool requires_luhn = false;
+
+        // 1. Email anchored on '@'
+        if (c == '@') {
+            std::size_t start = i;
+            while (start > 0 && is_email_local(input[start - 1])) start--;
+            if (start < i && i - start <= 128) {
+                std::size_t end = i + 1;
+                while (end < input.size() && is_email_domain(input[end])) end++;
+                while (end > i + 1 && !std::isalpha(static_cast<unsigned char>(input[end - 1]))) end--;
+
+                std::size_t dot_pos = input.find_last_of('.', end - 1);
+                if (dot_pos != std::string_view::npos && dot_pos > i) {
+                    std::size_t tld_len = end - 1 - dot_pos;
+                    if (tld_len >= 2 && tld_len <= 4) {
+                        bool valid_tld = true;
+                        for (std::size_t k = dot_pos + 1; k < end; ++k) {
+                            if (!std::isalpha(static_cast<unsigned char>(input[k]))) { valid_tld = false; break; }
+                        }
+                        if (valid_tld && end - i - 1 <= 128) {
+                            if (has_clean_boundary(input, start, end - start)) {
+                                std::memset(data + start, '*', end - start);
+                                i = end; continue;
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        // 2. Center-Out Parsers anchored on '_' (GitHub, Stripe)
+        else if (c == '_') {
+            bool is_github = false;
+            if (i >= 3) {
+                if (input[i-3] == 'g' && input[i-2] == 'h' && 
+                    (input[i-1] == 'p' || input[i-1] == 'o' || input[i-1] == 'u' || input[i-1] == 's' || input[i-1] == 'r')) {
+                    is_github = true;
+                } else if (i >= 10 && input.substr(i-10, 11) == "github_pat_") {
+                    is_github = true;
+                }
+            }
+            if (is_github && (match_len = secrets::parse_github_token(input, i, match_start)) > 0) {
+                std::size_t prefix = (match_len >= 22 && input.substr(match_start, 11) == "github_pat_") ? 11 : 4;
+                std::memset(data + match_start + prefix, '*', match_len - prefix);
+                i = match_start + match_len; continue;
+            }
+
+            bool is_stripe = false;
+            if (i >= 2) {
+                char p1 = input[i-2], p2 = input[i-1];
+                if ((p1 == 's' || p1 == 'p' || p1 == 'r') && p2 == 'k') {
+                    is_stripe = true;
+                } else if (i >= 7 && (input.substr(i-5, 5) == "_live" || input.substr(i-5, 5) == "_test")) {
+                    is_stripe = true;
+                }
+            }
+            if (is_stripe && (match_len = secrets::parse_stripe_key(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 8, '*', match_len - 8);
+                i = match_start + match_len; continue;
+            }
+        }
+
+        // 3. Center-Out Parsers anchored on '-' (Private Keys, Slack, UUID, MAC, CC, SSN, Phone)
+        else if (c == '-') {
+            // Fast bypass for date stamps YYYY-MM-DD (e.g. 2026-08-20)
+            if (i >= 4 && i + 5 < len && is_digit(input[i-4]) && is_digit(input[i-3]) && is_digit(input[i-2]) && is_digit(input[i-1]) &&
+                is_digit(input[i+1]) && is_digit(input[i+2]) && input[i+3] == '-' && is_digit(input[i+4]) && is_digit(input[i+5])) {
+                i += 5; continue;
+            }
+
+            // Private key requires "-----"
+            if (i + 15 < len && input.substr(i, 5) == "-----") {
+                if ((match_len = secrets::parse_private_key(input, i)) > 0) {
+                    std::memset(data + i, '*', match_len);
+                    i += match_len; continue;
+                }
+            }
+
+            // Slack token requires "xox"
+            if (i >= 4 && input[i-4] == 'x' && input[i-3] == 'o' && input[i-2] == 'x' &&
+                (input[i-1] == 'b' || input[i-1] == 'p' || input[i-1] == 'a' || input[i-1] == 'r')) {
+                if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
+                    std::memset(data + match_start + 5, '*', match_len - 5);
+                    i = match_start + match_len; continue;
+                }
+            }
+            
+            // Structural PII fallbacks: MUST be preceded by hex or digit
+            if (i > 0) {
+                char prev = input[i - 1];
+                if (is_hex(prev)) {
+                    std::size_t start = i;
+                    while (start > 0 && i - start < 8 && is_hex(input[start - 1])) start--;
+                    if (i - start == 8 && (match_len = parse_uuid(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; inplace_len = match_len;
+                    }
+                    if (match_len == 0 && i - start <= 2) {
+                        if ((match_len = parse_mac(input, start)) > 0 && start + match_len > i) {
+                            match_start = start; inplace_len = match_len;
+                        }
+                    }
+                }
+                if (match_len == 0 && is_digit(prev)) {
+                    std::size_t start = i;
+                    while (start > 0 && i - start < 4 && is_digit(input[start - 1])) start--;
+                    if ((match_len = parse_credit_card(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; inplace_len = match_len; requires_luhn = true;
+                    } else if ((match_len = parse_ssn(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; inplace_len = match_len;
+                    } else if ((match_len = parse_phone(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; inplace_len = match_len;
+                    }
+                }
+            }
+        }
+
+        // 4. Center-Out Parsers anchored on '.' (JWT, IPv4)
+        else if (c == '.') {
+            // JWT: check for "eyJ" in header segment before calling parse_jwt
+            if (i >= 4) {
+                std::size_t back = i;
+                while (back > 0 && i - back < 256 && (std::isalnum(static_cast<unsigned char>(input[back - 1])) || input[back - 1] == '-' || input[back - 1] == '_')) back--;
+                if (i - back >= 3 && input[back] == 'e' && input[back+1] == 'y' && input[back+2] == 'J') {
+                    auto jwt = secrets::parse_jwt(input, i, match_start);
+                    if (jwt.total_len > 0) {
+                        std::size_t offset = jwt.header_len + 1; 
+                        std::memset(data + match_start + offset, '*', jwt.total_len - offset);
+                        i = match_start + jwt.total_len; continue;
+                    }
+                }
+            }
+            
+            // IPv4: requires digit before '.' AND digit after '.'
+            if (i > 0 && is_digit(input[i - 1]) && i + 1 < len && is_digit(input[i + 1])) {
+                std::size_t start = i;
+                while (start > 0 && i - start < 3 && is_digit(input[start - 1])) start--;
+                if (start < i && (match_len = parse_ipv4(input, start)) > 0 && start + match_len > i) {
+                    match_start = start; inplace_len = match_len;
+                }
+            }
+        }
+
+        // 5. Center-Out Parsers anchored on ':' (DB Connection, IPv6, MAC)
+        else if (c == ':') {
+            // Fast bypass for time stamps HH:MM:SS (e.g. 10:15:30)
+            if (i >= 2 && i + 5 < len && is_digit(input[i-2]) && is_digit(input[i-1]) &&
+                is_digit(input[i+1]) && is_digit(input[i+2]) && input[i+3] == ':' && is_digit(input[i+4]) && is_digit(input[i+5]) &&
+                (i + 6 >= len || input[i+6] != ':')) {
+                i += 5; continue;
+            }
+
+            // Connection string: strictly requires "://"
+            if (i + 2 < len && input[i+1] == '/' && input[i+2] == '/') {
+                std::size_t pw_start = 0, pw_len = 0;
+                if ((match_len = secrets::parse_connection_string(input, i, pw_start, pw_len)) > 0) {
+                    std::memset(data + pw_start, '*', pw_len);
+                    std::size_t scheme_start = i;
+                    while (scheme_start > 0 && std::isalpha(static_cast<unsigned char>(input[scheme_start - 1]))) scheme_start--;
+                    i = scheme_start + match_len; continue;
+                }
+            }
+
+            // IPv6 / MAC: strictly requires hex on BOTH sides (or compressed ::)
+            if (i > 0 && (is_hex(input[i-1]) || (i + 1 < len && input[i+1] == ':'))) {
+                std::size_t start = i;
+                while (start > 0 && i - start < 4 && is_hex(input[start - 1])) start--;
+                if ((match_len = parse_ipv6(input, start)) > 0 && start + match_len > i) {
+                    match_start = start; inplace_len = match_len;
+                } else if (i + 1 < len && is_hex(input[i+1])) {
+                    start = i;
+                    while (start > 0 && i - start < 2 && is_hex(input[start - 1])) start--;
+                    if ((match_len = parse_mac(input, start)) > 0 && start + match_len > i) {
+                        match_start = start; inplace_len = match_len;
+                    }
+                }
+            }
+        }
+
+        // 6. Phone numbers anchored on '+' or '('
+        else if (c == '+' || c == '(') {
+            if ((match_len = parse_phone(input, i)) > 0) {
+                match_start = i; inplace_len = match_len;
+            }
+        }
+
+        // 7. Center-Out Parsers anchored on '"' (quoted AWS/GCP keys)
+        else if (c == '"') {
+            if (i + 20 <= len && (match_len = secrets::parse_aws_key(input, i + 1)) > 0) {
+                match_start = i + 1; inplace_offset = 4; inplace_len = match_len - 4;
+            } else if (i + 39 <= len && (match_len = secrets::parse_gcp_key(input, i + 1)) > 0) {
+                match_start = i + 1; inplace_offset = 4; inplace_len = match_len - 4;
+            }
+        }
+
+        // 8. Generic K/V Secrets and continuous numbers anchored on '=' or ':'
+        if (match_len == 0 && (c == '=' || (c == ':' && i + 1 < len && input[i+1] != '/'))) {
+            std::size_t val_start = 0, val_len = 0;
+            if ((match_len = secrets::parse_kv_secret(input, i, val_start, val_len)) > 0) {
+                if (secrets::parse_aws_key(input, val_start) > 0) {
+                    std::memset(data + val_start + 4, '*', val_len - 4);
+                } else if (secrets::parse_gcp_key(input, val_start) > 0) {
+                    std::memset(data + val_start + 4, '*', val_len - 4);
+                } else {
+                    std::memset(data + val_start, '*', val_len);
+                }
+                i += match_len; continue;
+            }
+            
+            // Attached secrets / structured PII after ':' or '='
+            std::size_t curr = i + 1;
+            while (curr < len && (input[curr] == ' ' || input[curr] == '"' || input[curr] == '\'')) curr++;
+            if (curr < len) {
+                if ((match_len = secrets::parse_gcp_key(input, curr)) > 0) {
+                    match_start = curr; inplace_offset = 4; inplace_len = match_len - 4;
+                } else if ((match_len = secrets::parse_aws_key(input, curr)) > 0) {
+                    match_start = curr; inplace_offset = 4; inplace_len = match_len - 4;
+                } else if (is_digit(input[curr])) {
+                    // --- TIMESTAMP LOOKAHEAD BYPASS ---
+                    std::size_t temp = curr;
+                    while (temp < len && is_digit(input[temp])) temp++;
+                    
+                    if (temp < len && input[temp] == ':') {
+                        // Fast-reject timestamp
+                    } else {
+                        if ((match_len = parse_credit_card(input, curr)) > 0) {
+                            match_start = curr; inplace_len = match_len; requires_luhn = true;
+                        } else if ((match_len = parse_ipv4(input, curr)) > 0) {
+                            match_start = curr; inplace_len = match_len;
+                        } else if ((match_len = parse_ssn(input, curr)) > 0) {
+                            match_start = curr; inplace_len = match_len;
+                        } else if ((match_len = parse_id_num(input, curr)) > 0) {
+                            match_start = curr; inplace_len = match_len;
+                        } else if ((match_len = parse_phone(input, curr)) > 0) {
+                            match_start = curr; inplace_len = match_len;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 9. Floating AWS Keys (Ultra-fast inline prefix reject)
+        else if (c == 'A') {
+            if (i + 19 < len) {
+                char c1 = input[i+1], c2 = input[i+2], c3 = input[i+3];
+                if ((c1 == 'K' && c2 == 'I' && c3 == 'A') || 
+                    (c1 == 'S' && c2 == 'I' && c3 == 'A') || 
+                    (c1 == 'B' && c2 == 'I' && c3 == 'A') || 
+                    (c1 == 'R' && c2 == 'O' && c3 == 'A') || 
+                    (c1 == 'I' && c2 == 'D' && c3 == 'A')) {
+                    
+                    if ((match_len = secrets::parse_aws_key(input, i)) > 0) {
+                        match_start = i; inplace_offset = 4; inplace_len = match_len - 4;
+                    }
+                }
+            }
+        }
+
+        // Execute validations and mutate memory directly
+        if (match_len > 0) {
+            if (has_clean_boundary(input, match_start, match_len)) {
+                if (!requires_luhn || luhn_validate(std::string_view(input.data() + match_start, match_len))) {
+                    std::memset(data + match_start + inplace_offset, '*', inplace_len);
+                    i = std::max(i + 1, match_start + match_len);
+                    continue;
+                }
+            }
+        }
+
+        ++i;
     }
 }
 

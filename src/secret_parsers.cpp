@@ -25,20 +25,26 @@ inline bool is_base64url(char c) noexcept {
 } // anonymous namespace
 
 bool has_context_word(std::string_view input, std::size_t pos, const std::string_view* keywords, std::size_t num_keywords) noexcept {
-    std::size_t start = (pos > 40) ? pos - 40 : 0;
-    std::string_view window = input.substr(start, pos - start);
+    if (pos == 0) return false;
+    std::size_t k_end = pos;
+    while (k_end > 0 && (input[k_end-1] == ' ' || input[k_end-1] == '"' || input[k_end-1] == '\'')) k_end--;
+    if (k_end == 0) return false;
     
-    char lower_window[64];
-    std::size_t win_len = window.size();
-    if (win_len > 64) win_len = 64; 
+    std::size_t k_start = k_end;
+    while (k_start > 0 && (std::isalnum(static_cast<unsigned char>(input[k_start-1])) || input[k_start-1] == '_')) k_start--;
+    std::size_t k_len = k_end - k_start;
     
-    for (std::size_t i = 0; i < win_len; ++i) {
-        lower_window[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(window[i])));
+    // Fast length reject: all valid keywords are between 5 and 14 chars
+    if (k_len < 5 || k_len > 14) return false;
+    
+    char lower_kw[16];
+    for (std::size_t i = 0; i < k_len; ++i) {
+        lower_kw[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(input[k_start + i])));
     }
-    std::string_view l_win(lower_window, win_len);
+    std::string_view word(lower_kw, k_len);
     
     for (std::size_t i = 0; i < num_keywords; ++i) {
-        if (l_win.find(keywords[i]) != std::string_view::npos) {
+        if (word == keywords[i]) {
             return true;
         }
     }

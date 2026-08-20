@@ -173,19 +173,21 @@ void Engine::scrub_bulk_inplace(char* data, std::size_t len) const {
         return;
     }
 
-    std::string_view view(data, len);
-    auto all_intervals = scan_bulk_intervals(view);
+    auto chunks = compute_chunks(len, workers_);
+    if (chunks.empty()) {
+        matcher_.scrub_inplace(data, len);
+        return;
+    }
 
-    if (all_intervals.empty()) return;
-
-    // Single-threaded memset pass — no cache-line bouncing
-    for (const auto& iv : all_intervals) {
-        if (iv.inplace_len > 0) {
-            std::size_t mask_start = iv.start + iv.inplace_offset;
-            if (mask_start + iv.inplace_len <= len) {
-                std::memset(data + mask_start, '*', iv.inplace_len);
-            }
-        }
+    // Direct multi-threaded in-place masking: ZERO vector allocations, ZERO sorting
+    std::vector<std::jthread> threads;
+    threads.reserve(chunks.size());
+    for (std::size_t i = 0; i < chunks.size(); ++i) {
+        threads.emplace_back([this, data, &chunks, i]() {
+            char* chunk_ptr = data + chunks[i].start;
+            std::size_t chunk_len = chunks[i].scan_end - chunks[i].start;
+            matcher_.scrub_inplace(chunk_ptr, chunk_len);
+        });
     }
 }
 
