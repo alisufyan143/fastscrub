@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
     add_compile_options(/O2 /utf-8 /permissive-)
+elseif(APPLE)
+    add_compile_options(-O3 -faligned-allocation)
 else()
     add_compile_options(-O3)
 endif()
