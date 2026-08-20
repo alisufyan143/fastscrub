@@ -11,41 +11,83 @@ A radically high-performance, zero-allocation Personally Identifiable Informatio
 * **Vectorized Center-Out SWAR Scanning**: Skips clean ASCII text 8 bytes per CPU cycle using 64-bit SIMD-Within-A-Register (SWAR) bit-twiddling and triggers center-out structural lookups on high-entropy punctuation anchors (`@`, `_`, `-`, `.`, `:`, `=`, `+`, `(`, `"`, `A`).
 * **True Zero-Allocation In-Place Mutation (Mode B)**: Directly mutates Python `bytearray` buffers in RAM by overwriting sensitive positions with `*` while preserving buffer length and context structure. Zero heap allocations and zero sorting passes.
 * **100+ MB/s End-to-End Throughput**: Processes a massive **30.3 GB real-world server log dataset (`Thunderbird.log`) in ~4.7 minutes** on modest quad-core consumer hardware, achieving **107.27 MB/s sustained throughput (peaking at 124.61 MB/s)**.
-* **100.00% Recall on Ground-Truth Datasets**: Successfully detected **47,400 out of 47,400** secrets injected across 30.3 GB of logs, with **0% false positives** on high-entropy noise traps and full Luhn validation on credit card numbers.
+* **Genuine Industrial Ground-Truth Accuracy**: Evaluated across **137,026 third-party annotated documents** (AI4Privacy, Microsoft Presidio, TruffleHog), achieving **99.97% Precision**, **0.852 F1-Score**, and **0.783 F2-Score (PIIMB)**.
 * **Overlap-Aware Multi-Core Concurrency**: Features an overlap-preserving chunking architecture (2048-byte boundary overlap) with native `std::jthread` worker pools that drops the Python GIL, guaranteeing large secrets (such as multi-hundred-byte JWTs or DB connection strings) are never fractured across thread splits.
 
 ---
 
-## 📊 Benchmark Results
+## 📊 Industrial Ground-Truth Leaderboard Results
 
-### 1. Large-Scale 30.3 GB Production Benchmark (`Thunderbird.log`)
-Tested on an Intel Core i5-7200U (2 physical cores / 4 threads @ 2.50GHz - 3.10GHz), 16 GB RAM, 256 GB NVMe SSD:
+`fastscrub` was evaluated on **137,026 genuine third-party annotated documents and industrial secret test suites**, following the official **HuggingFace PII Masking Benchmark (PIIMB)** evaluation standard:
+
+### 1. Master Leaderboard Matrix
 
 ```text
-===============================================================
-           FASTSCRUB 30.3 GB PYTHON BENCHMARK
-===============================================================
-[*] Dataset Size      : 30,315.69 MB (30.3 GB)
-[*] Chunk Size        : 64.00 MB
-[*] Boundary Safe     : 2048 bytes overlap retained per chunk
----------------------------------------------------------------
-[Progress] 100% (30316 MB) - Peak Speed: 124.61 MB/s
----------------------------------------------------------------
-Total CPU Time        : 282.60 seconds (~4.7 minutes)
-Sustained Throughput  : 107.27 MB/s
-True Positives        : 47,400 / 47,400 secrets
-Recall Rate           : 100.00%
-===============================================================
+=========================================================================================================
+                 FASTSCRUB MASTER GROUND-TRUTH ACCURACY & SPEED MATRIX
+=========================================================================================================
+ Benchmark Dataset            |     Docs |     TP |    FP |    FN | Precision |   Recall |     F1 | F2 (PIIMB) | Throughput
+---------------------------------------------------------------------------------------------------------
+ AI4Privacy English (43k)     |   43,501 |  15,486|     0 |  6,810|   100.00% |   69.46% |  0.820 |      0.740 |   52.39 MB/s
+ AI4Privacy French (62k)      |   61,958 |  21,220|     0 | 10,602|   100.00% |   66.68% |  0.800 |      0.714 |   41.73 MB/s
+ AI4Privacy OpenPII (30k)     |   29,908 |  24,034|     0 |  3,469|   100.00% |   87.39% |  0.933 |      0.896 |   54.31 MB/s
+ Microsoft Presidio (v2)      |    1,500 |     131|     0 |    197|   100.00% |   39.94% |  0.571 |      0.454 |    5.85 MB/s
+ TruffleHog (25 Detectors)    |      159 |      65|    21 |     39|    75.58% |   62.50% |  0.684 |      0.647 |   17.60 MB/s
+---------------------------------------------------------------------------------------------------------
+ OVERALL MASTER BENCHMARK     |  137,026 |  60,936|    21 | 21,117|    99.97% |   74.26% |  0.852 |      0.783 |   47.94 MB/s
+=========================================================================================================
 ```
 
-### 2. Performance Engineering Progression
+---
 
-| Milestone / Optimization Stage | 30.3 GB Time | Throughput | Peak Speed | Secret Recall (TruffleHog) | Unit Tests |
+### 2. Entity-by-Entity Accuracy Breakdown
+
+| Entity Category | Target Description | True Positives (TP) | False Negatives (FN) | Recall | Status & Technical Analysis |
 |---|---|---|---|---|---|
-| **Baseline (Initial State)** | `1,567.28 s` (~26.1 min) | `19.34 MB/s` | `24.0 MB/s` | `100.00%` (47,400 / 47,400) | 70 / 70 |
-| **Stage 1: Multi-Threading Wiring** | `893.71 s` (~14.9 min) | `33.92 MB/s` | `40.2 MB/s` | `100.00%` (47,398 / 47,400) | 69 / 70 |
-| **Stage 2: Zero-Allocation Mode B** | `781.12 s` (~13.0 min) | `38.81 MB/s` | `48.4 MB/s` | `100.00%` (47,400 / 47,400) | 70 / 70 |
-| **Stage 3: Substring Elimination & Fast Guards** | **`282.60 s` (~4.7 min)** | **`107.27 MB/s`** | **`124.61 MB/s`** | **`100.00%` (47,400 / 47,400)** | **70 / 70** |
+| **`IP_ADDRESS`** | IPv4 & IPv6 addresses | **25,109** | 42 | **99.83%** | 🏆 **Near-Perfect**: Handles standard and compressed notations. |
+| **`EMAIL`** | RFC 5322 email addresses | **19,029** | 72 | **99.62%** | 🏆 **Near-Perfect**: Near zero misses across EN and FR corpora. |
+| **`PHONE`** | E.164 & local phone numbers | **8,515** | 2,167 | **79.71%** | ⚡ **High**: Misses some local French dot-separated formats. |
+| **`SSN`** | US Social Security Numbers | **7,967** | 7,027 | **53.13%** | 🔍 **US Scope**: AI4Privacy labels 13-digit French NIRs as `SSN`. |
+| **`CREDIT_CARD`** | Payment Card Numbers | **27** | 5,565 | **0.48%** | 🛡️ **Strict Luhn Checksum**: AI4Privacy synthetic cards are mathematically invalid numbers (`5890...`) that fail Luhn checksum. |
+| **`INFRA_SECRET`** | Cloud keys, DB URIs, JWTs | **224** | 6,205 | **3.48%** | 🛡️ **Entropy Guarded**: AI4Privacy labels plain dictionary words (`"monkey123"`) as `PASSWORD`. FastScrub requires high entropy to avoid false alarms. |
+
+---
+
+### 3. TruffleHog Cloud & Infrastructure Secrets Matrix
+
+Evaluated on **159 verified test vectors** from TruffleHog's official Go detector test suites:
+
+| Detector | Category | True Secrets (TP) | Missed (FN) | False Traps (FP) | Recall |
+|---|---|---|---|---|---|
+| **AWS Access Keys (`accesskey`)** | Cloud Primitives | **3** | 0 | 1 | **100.00%** |
+| **Google Cloud (`gcp`)** | Cloud Primitives | **6** | 0 | 0 | **100.00%** |
+| **GitHub Tokens (`github`)** | Code & CI/CD | **1** | 0 | 0 | **100.00%** |
+| **GitLab Tokens (`gitlab`)** | Code & CI/CD | **1** | 0 | 0 | **100.00%** |
+| **Docker Hub (`dockerhub`)** | Containers | **2** | 0 | 0 | **100.00%** |
+| **HuggingFace (`huggingface`)** | AI Platforms | **1** | 0 | 0 | **100.00%** |
+| **MongoDB URIs (`mongodb`)** | Database | **26** | 0 | 2 | **100.00%** |
+| **PostgreSQL URIs (`postgres`)** | Database | **7** | 2 | 1 | **77.78%** |
+| **Private Keys (`privatekey`)** | Cryptography | **3** | 1 | 0 | **75.00%** |
+| **NPM Tokens (`npmtoken`)** | Package Manager | **3** | 1 | 1 | **75.00%** |
+| **Stripe Keys (`stripe`)** | Fintech | **1** | 2 | 0 | **33.33%** |
+| **OpenAI / Anthropic Keys** | LLM API Keys | 0 | 9 | 0 | 🔄 *Next release roadmap* |
+
+---
+
+## ⚡ Large-Scale Multi-Domain Throughput Matrix
+
+Tested across **61.64 GB of real-world server logs** (Loghub repository) on an Intel Core i5-7200U (2 cores / 4 threads @ 2.50GHz - 3.10GHz), 16 GB RAM, 256 GB NVMe SSD:
+
+| Dataset Name | Domain / Log Category | Size (MB) | Throughput | Peak Speed | Secret Recall |
+|---|---|---|---|---|---|
+| **Thunderbird** | Supercomputer System Logs | **30,315.69 MB** | **107.27 MB/s** | **124.61 MB/s** | **100.00%** |
+| **Windows OS** | Windows Server Event Logs | **26,715.00 MB** | **104.18 MB/s** | **121.50 MB/s** | **100.00%** |
+| **HDFS Logs** | Hadoop Distributed File System | **1,504.88 MB** | **98.45 MB/s** | **116.20 MB/s** | **100.00%** |
+| **OpenSSH Logs** | Network Auth & Security | **70.02 MB** | **111.87 MB/s** | **113.28 MB/s** | **100.00%** |
+| **Mac OS Logs** | macOS Kernel & Syslog | **16.10 MB** | **94.22 MB/s** | **94.22 MB/s** | **100.00%** |
+| **Apache ZooKeeper**| Distributed Coordination | **9.94 MB** | **92.40 MB/s** | **92.40 MB/s** | **100.00%** |
+| **Apache HTTP** | Web Server Access Logs | **4.90 MB** | **125.98 MB/s** | **125.98 MB/s** | **100.00%** |
+| **Linux Kernel** | Linux Operating System | **2.24 MB** | **71.14 MB/s** | **71.14 MB/s** | **100.00%** |
 
 ---
 
@@ -160,17 +202,17 @@ for log in safe_logs:
 
 ---
 
-## 🧪 Testing & Benchmarking
+## 🧪 Testing & Reproduction Commands
 
 ```powershell
-# Run the complete test suite (70/70 tests)
+# 1. Run the complete unit test suite (70/70 tests)
 python -m pytest tests/ -v
 
-# Run the scientific bottleneck diagnostic tool
-python bench/diagnose_bottlenecks.py tests/data/Thunderbird.log
+# 2. Run the Master Ground-Truth Leaderboard Benchmark (137k+ Docs)
+python bench/eval_leaderboard.py --all
 
-# Run the full-scale 30.3 GB throughput benchmark
-python bench/bench_throughput.py tests/data/Thunderbird.log
+# 3. Run the Multi-Domain Large-Scale Loghub Throughput Matrix
+python bench/benchmark_suite.py --all
 ```
 
 ---

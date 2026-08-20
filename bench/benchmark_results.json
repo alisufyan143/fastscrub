@@ -1,0 +1,122 @@
+{
+  "Apache.log": {
+    "file": "Apache.log",
+    "name": "Apache Web Server",
+    "category": "Web & HTTP Access Logs",
+    "size_mb": 4.9,
+    "time_s": 0.04,
+    "speed_mbs": 125.98,
+    "peak_mbs": 125.98,
+    "recall_pct": 100.0,
+    "probes_detected": 20,
+    "probes_injected": 20
+  },
+  "Linux.log": {
+    "file": "Linux.log",
+    "name": "Linux Kernel & Syslog",
+    "category": "Linux Operating System",
+    "size_mb": 2.24,
+    "time_s": 0.03,
+    "speed_mbs": 71.14,
+    "peak_mbs": 71.14,
+    "recall_pct": 100.0,
+    "probes_detected": 20,
+    "probes_injected": 20
+  },
+  "SSH.log": {
+    "file": "SSH.log",
+    "name": "OpenSSH Auth Logs",
+    "category": "Auth & Network Security",
+    "size_mb": 70.02,
+    "time_s": 0.63,
+    "speed_mbs": 111.87,
+    "peak_mbs": 113.28,
+    "recall_pct": 100.0,
+    "probes_detected": 40,
+    "probes_injected": 40
+  },
+  "Zookeeper.log": {
+    "file": "Zookeeper.log",
+    "name": "Apache ZooKeeper",
+    "category": "Consensus & Coordination",
+    "size_mb": 9.94,
+    "time_s": 14.52,
+    "speed_mbs": 0.68,
+    "peak_mbs": 0.68,
+    "recall_pct": 100.0,
+    "probes_detected": 20,
+    "probes_injected": 20
+  },
+  "Mac.log": {
+    "file": "Mac.log",
+    "name": "Apple macOS System",
+    "category": "macOS Operating System",
+    "size_mb": 16.1,
+    "time_s": 0.16,
+    "speed_mbs": 98.22,
+    "peak_mbs": 98.22,
+    "recall_pct": 100.0,
+    "probes_detected": 20,
+    "probes_injected": 20
+  },
+  "train.json": {
+    "file": "train.json",
+    "name": "Kaggle Student Essays",
+    "category": "Academic PII NLP",
+    "size_mb": 104.42,
+    "time_s": 0.32,
+    "speed_mbs": 321.45,
+    "peak_mbs": 322.01,
+    "recall_pct": 100.0,
+    "probes_detected": 40,
+    "probes_injected": 40
+  },
+  "1english_openpii_30k.jsonl": {
+    "file": "1english_openpii_30k.jsonl",
+    "name": "OpenPII Corpus",
+    "category": "Unstructured Document NLP",
+    "size_mb": 98.04,
+    "time_s": 0.84,
+    "speed_mbs": 116.94,
+    "peak_mbs": 119.86,
+    "recall_pct": 100.0,
+    "probes_detected": 40,
+    "probes_injected": 40
+  },
+  "HDFS.log": {
+    "file": "HDFS.log",
+    "name": "Hadoop HDFS Cluster",
+    "category": "Distributed Big Data",
+    "size_mb": 1504.88,
+    "time_s": 15.97,
+    "speed_mbs": 94.24,
+    "peak_mbs": 106.37,
+    "recall_pct": 100.0,
+    "probes_detected": 480,
+    "probes_injected": 480
+  },
+  "Windows.log": {
+    "file": "Windows.log",
+    "name": "Windows Security Events",
+    "category": "Enterprise Windows Logs",
+    "size_mb": 26714.99,
+    "time_s": 371.38,
+    "speed_mbs": 71.93,
+    "peak_mbs": 76.79,
+    "recall_pct": 100.0,
+    "probes_detected": 8360,
+    "probes_injected": 8360
+  },
+  "Thunderbird.log": {
+    "file": "Thunderbird.log",
+    "name": "Thunderbird HPC",
+    "category": "Supercomputing Logs",
+    "size_mb": 30315.69,
+    "time_s": 302.18,
+    "speed_mbs": 100.32,
+    "peak_mbs": 151.87,
+    "recall_pct": 100.0,
+    "probes_detected": 9480,
+    "probes_injected": 9480
+  }
+}

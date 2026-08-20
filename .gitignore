@@ -44,11 +44,8 @@ CMakeInit.txt
 
 # Testing
 .pytest_cache/
-tests/data/*.json
-tests/data/*.jsonl
-tests/data/*.parquet
-tests/data/*.txt
-tests/data/secrets/
+*.zip
+tests/data/
 !tests/data/.keep
 
 # Environments
@@ -64,4 +61,3 @@ venv.bak/
 .vscode/
 .idea/
 Thunderbird.tar.gz
-tests/data/Thunderbird.log
