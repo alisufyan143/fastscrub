@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "fastscrub"
-version = "0.1.2"
+version = "0.1.3"
 description = "Ultra high-performance zero-allocation PII and Secrets redaction engine powered by C++20 and SWAR vectorization."
 readme = "README.md"
 requires-python = ">=3.10"

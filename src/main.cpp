@@ -50,16 +50,16 @@ NB_MODULE(fastscrub_backend, m) {
 
         // In-place scrub (Mode B) — zero allocation, mutates bytearray directly
         .def("scrub_inplace", [](const Engine& engine, nb::object py_buf) {
-            char* data = PyByteArray_AS_STRING(py_buf.ptr());
-            Py_ssize_t len = PyByteArray_GET_SIZE(py_buf.ptr());
+            char* data = PyByteArray_AsString(py_buf.ptr());
+            Py_ssize_t len = PyByteArray_Size(py_buf.ptr());
             engine.scrub_inplace(data, static_cast<std::size_t>(len));
         }, nb::arg("buffer"),
         "Scrub PII in-place by overwriting with '*'. Zero allocation.")
 
         // Parallel in-place scrub — GIL released
         .def("scrub_bulk_inplace", [](const Engine& engine, nb::object py_buf) {
-            char* data = PyByteArray_AS_STRING(py_buf.ptr());
-            Py_ssize_t len = PyByteArray_GET_SIZE(py_buf.ptr());
+            char* data = PyByteArray_AsString(py_buf.ptr());
+            Py_ssize_t len = PyByteArray_Size(py_buf.ptr());
             {
                 nb::gil_scoped_release release;
                 engine.scrub_bulk_inplace(data, static_cast<std::size_t>(len));
