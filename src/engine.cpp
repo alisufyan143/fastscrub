@@ -21,11 +21,11 @@ Engine::Engine(unsigned worker_count)
 }
 
 std::optional<std::string> Engine::scrub(std::string_view input) const {
-    return matcher_.scrub(input);
+    return scrub_bulk(input);
 }
 
 void Engine::scrub_inplace(char* data, std::size_t len) const {
-    matcher_.scrub_inplace(data, len);
+    scrub_bulk_inplace(data, len);
 }
 
 std::vector<ChunkRange> Engine::compute_chunks(

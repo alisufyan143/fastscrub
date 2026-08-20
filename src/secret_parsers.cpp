@@ -47,7 +47,19 @@ bool has_context_word(std::string_view input, std::size_t pos, const std::string
 
 std::size_t parse_aws_key(std::string_view s, std::size_t pos) noexcept {
     if (pos + 20 > s.size()) return 0;
-    if (s[pos] != 'A' || s[pos+1] != 'K' || s[pos+2] != 'I' || s[pos+3] != 'A') return 0;
+    if (s[pos] != 'A') return 0;
+    
+    char c1 = s[pos+1], c2 = s[pos+2], c3 = s[pos+3];
+    
+    // Accept AKIA, ASIA, ABIA, AROA, AIDA
+    bool valid_prefix = (c1 == 'K' && c2 == 'I' && c3 == 'A') || 
+                        (c1 == 'S' && c2 == 'I' && c3 == 'A') || 
+                        (c1 == 'B' && c2 == 'I' && c3 == 'A') || 
+                        (c1 == 'R' && c2 == 'O' && c3 == 'A') || 
+                        (c1 == 'I' && c2 == 'D' && c3 == 'A');
+                        
+    if (!valid_prefix) return 0;
+    
     for (std::size_t i = pos + 4; i < pos + 20; ++i) {
         char c = s[i];
         if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z'))) return 0;
@@ -55,22 +67,46 @@ std::size_t parse_aws_key(std::string_view s, std::size_t pos) noexcept {
     return 20;
 }
 
-std::size_t parse_github_token(std::string_view s, std::size_t pos) noexcept {
-    if (pos + 40 <= s.size()) {
-        if ((s[pos] == 'g' && s[pos+1] == 'h' && s[pos+2] == 'p' && s[pos+3] == '_') ||
-            (s[pos] == 'g' && s[pos+1] == 'h' && s[pos+2] == 'o' && s[pos+3] == '_')) {
-            std::size_t curr = pos + 4;
+// Center-Out GitHub token parser: pos points to '_'
+std::size_t parse_github_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    // 1. ghp_ or gho_ (pos is the '_' at start+3)
+    if (pos >= 3 && pos + 36 <= s.size()) {
+        if ((s[pos-3] == 'g' && s[pos-2] == 'h' && s[pos-1] == 'p') ||
+            (s[pos-3] == 'g' && s[pos-2] == 'h' && s[pos-1] == 'o')) {
+            std::size_t start = pos - 3;
+            std::size_t curr = pos + 1;
             while (curr < s.size() && is_base62(s[curr])) curr++;
-            std::size_t body_len = curr - (pos + 4);
-            if (body_len >= 36 && body_len <= 82) return curr - pos;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len >= 36 && body_len <= 82) {
+                match_start = start;
+                return curr - start;
+            }
         }
     }
-    if (pos + 33 <= s.size()) {
-        if (s.substr(pos, 11) == "github_pat_") {
-            std::size_t curr = pos + 11;
+    // 2. github_pat_ (pos is the second '_' at start+10)
+    if (pos >= 10 && pos + 22 <= s.size()) {
+        if (s.substr(pos - 10, 11) == "github_pat_") {
+            std::size_t start = pos - 10;
+            std::size_t curr = pos + 1;
             while (curr < s.size() && (is_base62(s[curr]) || s[curr] == '_')) curr++;
-            std::size_t body_len = curr - (pos + 11);
-            if (body_len >= 22) return curr - pos;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len >= 22) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    // 3. github_pat_ (pos is the first '_' at start+6)
+    if (pos >= 6 && pos + 26 <= s.size()) {
+        if (s.substr(pos - 6, 11) == "github_pat_") {
+            std::size_t start = pos - 6;
+            std::size_t curr = pos + 5; // after "pat_"
+            while (curr < s.size() && (is_base62(s[curr]) || s[curr] == '_')) curr++;
+            std::size_t body_len = curr - (pos + 5);
+            if (body_len >= 22) {
+                match_start = start;
+                return curr - start;
+            }
         }
     }
     return 0;
@@ -85,45 +121,74 @@ std::size_t parse_gcp_key(std::string_view s, std::size_t pos) noexcept {
     return 39;
 }
 
-std::size_t parse_slack_token(std::string_view s, std::size_t pos) noexcept {
-    if (pos + 40 > s.size()) return 0;
-    if (s[pos] != 'x' || s[pos+1] != 'o' || s[pos+2] != 'x') return 0;
-    char type = s[pos+3];
-    if (type != 'b' && type != 'p') return 0;
-    if (s[pos+4] != '-') return 0;
-    
-    std::size_t curr = pos + 5;
-    int blocks = 0;
-    while (curr < s.size() && blocks < 6) {
-        std::size_t block_start = curr;
-        while (curr < s.size() && (is_base62(s[curr]))) curr++;
-        if (curr == block_start) break;
-        blocks++;
-        if (curr < s.size() && s[curr] == '-') {
-            curr++;
-        } else {
-            break;
+// Center-Out Slack token parser: pos points to '-'
+std::size_t parse_slack_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    if (pos >= 4 && pos + 36 <= s.size()) {
+        if (s[pos-4] == 'x' && s[pos-3] == 'o' && s[pos-2] == 'x' && (s[pos-1] == 'b' || s[pos-1] == 'p')) {
+            std::size_t start = pos - 4;
+            std::size_t curr = pos + 1;
+            int blocks = 0;
+            while (curr < s.size() && blocks < 6) {
+                std::size_t block_start = curr;
+                while (curr < s.size() && is_base62(s[curr])) curr++;
+                if (curr == block_start) break;
+                blocks++;
+                if (curr < s.size() && s[curr] == '-') {
+                    curr++;
+                } else {
+                    break;
+                }
+            }
+            std::size_t total_len = curr - start;
+            if (blocks >= 3 && total_len >= 40 && total_len <= 80) {
+                match_start = start;
+                return total_len;
+            }
         }
     }
-    std::size_t total_len = curr - pos;
-    if (blocks >= 3 && total_len >= 40 && total_len <= 80) return total_len;
     return 0;
 }
 
-std::size_t parse_stripe_key(std::string_view s, std::size_t pos) noexcept {
-    if (pos + 32 > s.size()) return 0;
-    char c0 = s[pos], c1 = s[pos+1];
-    if (!((c0 == 's' || c0 == 'r' || c0 == 'p') && c1 == 'k')) return 0;
-    if (s[pos+2] != '_') return 0;
-    
-    std::string_view mode = s.substr(pos + 3, 5);
-    if (mode != "live_" && mode != "test_") return 0;
-    
-    std::size_t body_start = pos + 8;
-    std::size_t curr = body_start;
-    while (curr < s.size() && is_base62(s[curr])) curr++;
-    std::size_t body_len = curr - body_start;
-    if (body_len >= 24 && body_len <= 48) return curr - pos;
+// Center-Out Stripe key parser: pos points to '_'
+std::size_t parse_stripe_key(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    // Case 1: pos is the first underscore (e.g. sk_live_)
+    if (pos >= 2 && pos + 30 <= s.size()) {
+        char c0 = s[pos-2], c1 = s[pos-1];
+        if ((c0 == 's' || c0 == 'r' || c0 == 'p') && c1 == 'k') {
+            std::string_view mode = s.substr(pos + 1, 5);
+            if (mode == "live_" || mode == "test_") {
+                std::size_t start = pos - 2;
+                std::size_t body_start = pos + 6;
+                std::size_t curr = body_start;
+                while (curr < s.size() && is_base62(s[curr])) curr++;
+                std::size_t body_len = curr - body_start;
+                if (body_len >= 24 && body_len <= 48) {
+                    match_start = start;
+                    return curr - start;
+                }
+            }
+        }
+    }
+    // Case 2: pos is the second underscore (e.g. sk_live_)
+    if (pos >= 7 && pos + 24 <= s.size()) {
+        std::string_view mode = s.substr(pos - 4, 5); // "live_" or "test_"
+        if (mode == "live_" || mode == "test_") {
+            if (s[pos-5] == '_') {
+                char c0 = s[pos-7], c1 = s[pos-6];
+                if ((c0 == 's' || c0 == 'r' || c0 == 'p') && c1 == 'k') {
+                    std::size_t start = pos - 7;
+                    std::size_t body_start = pos + 1;
+                    std::size_t curr = body_start;
+                    while (curr < s.size() && is_base62(s[curr])) curr++;
+                    std::size_t body_len = curr - body_start;
+                    if (body_len >= 24 && body_len <= 48) {
+                        match_start = start;
+                        return curr - start;
+                    }
+                }
+            }
+        }
+    }
     return 0;
 }
 
@@ -145,46 +210,43 @@ std::size_t parse_private_key(std::string_view s, std::size_t pos) noexcept {
     return final_end - pos;
 }
 
-JwtMatch parse_jwt(std::string_view s, std::size_t pos) noexcept {
-    if (pos + 20 > s.size()) return {0, 0};
-    if (s[pos] != 'e' || s[pos+1] != 'y' || s[pos+2] != 'J') return {0, 0};
+// Center-Out JWT parser: pos points to '.'
+JwtMatch parse_jwt(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    // Look backward for segment 1 (header, starts with eyJ)
+    std::size_t seg1_start = pos;
+    while (seg1_start > 0 && is_base64url(s[seg1_start - 1])) {
+        seg1_start--;
+    }
+    std::size_t header_len = pos - seg1_start;
+    if (header_len < 4) return {0, 0};
+    if (seg1_start + 3 > s.size() || s[seg1_start] != 'e' || s[seg1_start+1] != 'y' || s[seg1_start+2] != 'J') {
+        return {0, 0};
+    }
     
-    std::size_t curr = pos + 3;
-    int dots = 0;
-    std::size_t dot1_pos = 0;
-    std::size_t seg_start = pos;
+    // Check segment 2 (payload, starts with eyJ)
+    if (pos + 4 >= s.size() || s[pos+1] != 'e' || s[pos+2] != 'y' || s[pos+3] != 'J') {
+        return {0, 0};
+    }
     
-    while (curr < s.size()) {
-        char c = s[curr];
-        if (c == '.') {
-            std::size_t seg_len = curr - seg_start;
-            if (seg_len < 4) return {0, 0};
-            dots++;
-            if (dots == 1) {
-                dot1_pos = curr;
-                if (curr + 3 >= s.size() || s[curr+1] != 'e' || s[curr+2] != 'y' || s[curr+3] != 'J') {
-                    return {0, 0};
-                }
-            }
-            if (dots >= 2) {
-                curr++;
-                seg_start = curr;
-                while (curr < s.size() && is_base64url(s[curr]) && s[curr] != '.') curr++;
-                std::size_t seg3_len = curr - seg_start;
-                if (seg3_len < 4) return {0, 0};
-                std::size_t total = curr - pos;
-                if (total >= 20) {
-                    return {total, dot1_pos - pos};
-                }
-                return {0, 0};
-            }
-            seg_start = curr + 1;
-            curr++;
-        } else if (is_base64url(c)) {
-            curr++;
-        } else {
-            break;
-        }
+    std::size_t curr = pos + 1;
+    while (curr < s.size() && is_base64url(s[curr])) curr++;
+    if (curr >= s.size() || s[curr] != '.') return {0, 0};
+    
+    std::size_t dot2 = curr;
+    std::size_t seg2_len = dot2 - (pos + 1);
+    if (seg2_len < 4) return {0, 0};
+    
+    // Segment 3 (signature)
+    curr = dot2 + 1;
+    std::size_t seg3_start = curr;
+    while (curr < s.size() && is_base64url(s[curr]) && s[curr] != '.') curr++;
+    std::size_t seg3_len = curr - seg3_start;
+    if (seg3_len < 4) return {0, 0};
+    
+    std::size_t total = curr - seg1_start;
+    if (total >= 20) {
+        match_start = seg1_start;
+        return {total, header_len};
     }
     return {0, 0};
 }
