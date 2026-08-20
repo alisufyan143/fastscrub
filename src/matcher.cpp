@@ -108,14 +108,7 @@ std::size_t parse_ipv4(std::string_view s, std::size_t pos) noexcept {
 }
 
 std::size_t parse_ssn(std::string_view s, std::size_t pos) noexcept {
-    if (pos + 9 <= s.size()) {
-        bool all_digits = true;
-        for (int i = 0; i < 9; ++i) {
-            if (!is_digit(s[pos+i])) { all_digits = false; break; }
-        }
-        if (all_digits) return 9;
-    }
-    
+    // 1. US SSN (XXX-XX-XXXX) -> 11 chars
     if (pos + 11 <= s.size()) {
         int layout[] = {3, 2, 4};
         std::size_t curr = pos;
@@ -129,6 +122,42 @@ std::size_t parse_ssn(std::string_view s, std::size_t pos) noexcept {
             }
         }
         if (match) return 11;
+    }
+    
+    // 2. French NIR (Numéro de Sécurité Sociale) e.g. "1 85 12 75 108 105 42" or "1-85-12-75-108-105"
+    if (pos < s.size() && (s[pos] == '1' || s[pos] == '2')) {
+        std::size_t curr = pos;
+        int digit_count = 0;
+        while (curr < s.size()) {
+            char ch = s[curr];
+            if (is_digit(ch)) {
+                digit_count++;
+            } else if (ch == ' ' || ch == '-' || ch == '.') {
+                // separator
+            } else {
+                break;
+            }
+            curr++;
+            if (digit_count == 13 || digit_count == 15) {
+                if (curr >= s.size() || !is_digit(s[curr])) {
+                    return curr - pos;
+                }
+            }
+        }
+        if (digit_count >= 13 && digit_count <= 15) {
+            return curr - pos;
+        }
+    }
+
+    // 3. Continuous 9-digit US SSN
+    if (pos + 9 <= s.size()) {
+        bool all_digits = true;
+        for (int i = 0; i < 9; ++i) {
+            if (!is_digit(s[pos+i])) { all_digits = false; break; }
+        }
+        if (all_digits && (pos + 9 == s.size() || !is_digit(s[pos+9]))) {
+            return 9;
+        }
     }
     return 0;
 }
@@ -361,7 +390,7 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
             }
         }
 
-        // 2. Center-Out Parsers anchored on '_' (GitHub, Stripe)
+        // 2. Center-Out Parsers anchored on '_' (GitHub, Stripe, HuggingFace)
         else if (c == '_') {
             bool is_github = false;
             if (i >= 3) {
@@ -391,9 +420,14 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
                 intervals.push_back({match_start, match_len, "[REDACTED_STRIPE_KEY]", 8, match_len - 8});
                 i = match_start + match_len; continue;
             }
+
+            if ((match_len = secrets::parse_huggingface_token(input, i, match_start)) > 0) {
+                intervals.push_back({match_start, match_len, "[REDACTED_SECRET]", 3, match_len - 3});
+                i = match_start + match_len; continue;
+            }
         }
 
-        // 3. Center-Out Parsers anchored on '-' (Private Keys, Slack, UUID, MAC, CC, SSN, Phone)
+        // 3. Center-Out Parsers anchored on '-' (AI/DevOps Tokens, Private Keys, Slack, UUID, MAC, CC, SSN, Phone)
         else if (c == '-') {
             // Fast bypass for date stamps YYYY-MM-DD (e.g. 2026-08-20)
             if (i >= 4 && i + 5 < len && is_digit(input[i-4]) && is_digit(input[i-3]) && is_digit(input[i-2]) && is_digit(input[i-1]) &&
@@ -402,20 +436,44 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
                 continue;
             }
 
+            // Anthropic Claude key (sk-ant-...)
+            if ((match_len = secrets::parse_anthropic_key(input, i, match_start)) > 0) {
+                intervals.push_back({match_start, match_len, "[REDACTED_SECRET]", 7, match_len - 7});
+                i = match_start + match_len; continue;
+            }
+
+            // OpenAI API key (sk-proj-..., sk-admin-..., sk-...)
+            if ((match_len = secrets::parse_openai_key(input, i, match_start)) > 0) {
+                intervals.push_back({match_start, match_len, "[REDACTED_SECRET]", 3, match_len - 3});
+                i = match_start + match_len; continue;
+            }
+
+            // GitLab Token (glpat-...)
+            if ((match_len = secrets::parse_gitlab_token(input, i, match_start)) > 0) {
+                intervals.push_back({match_start, match_len, "[REDACTED_SECRET]", 6, match_len - 6});
+                i = match_start + match_len; continue;
+            }
+
+            // PyPI Token (pypi-...)
+            if ((match_len = secrets::parse_pypi_token(input, i, match_start)) > 0) {
+                intervals.push_back({match_start, match_len, "[REDACTED_SECRET]", 5, match_len - 5});
+                i = match_start + match_len; continue;
+            }
+
+            // Slack token requires "xox"
+            if (i >= 4 && input[i-4] == 'x' && input[i-3] == 'o' && input[i-2] == 'x' &&
+                (input[i-1] == 'b' || input[i-1] == 'p' || input[i-1] == 'a' || input[i-1] == 'r' || input[i-1] == 's')) {
+                if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
+                    intervals.push_back({match_start, match_len, "[REDACTED_SLACK_TOKEN]", 5, match_len - 5});
+                    i = match_start + match_len; continue;
+                }
+            }
+
             // Private key requires "-----"
             if (i + 15 < len && input.substr(i, 5) == "-----") {
                 if ((match_len = secrets::parse_private_key(input, i)) > 0) {
                     intervals.push_back({i, match_len, "[REDACTED_PRIVATE_KEY]", 0, match_len});
                     i += match_len; continue;
-                }
-            }
-
-            // Slack token requires "xox"
-            if (i >= 4 && input[i-4] == 'x' && input[i-3] == 'o' && input[i-2] == 'x' &&
-                (input[i-1] == 'b' || input[i-1] == 'p' || input[i-1] == 'a' || input[i-1] == 'r')) {
-                if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
-                    intervals.push_back({match_start, match_len, "[REDACTED_SLACK_TOKEN]", 5, match_len - 5});
-                    i = match_start + match_len; continue;
                 }
             }
             
@@ -448,8 +506,14 @@ bool Matcher::scan(std::string_view input, std::vector<PiiInterval>& intervals) 
             }
         }
 
-        // 4. Center-Out Parsers anchored on '.' (JWT, IPv4)
+        // 4. Center-Out Parsers anchored on '.' (JWT, Vault, IPv4)
         else if (c == '.') {
+            // Vault token (hvs., hvb., s.)
+            if ((match_len = secrets::parse_vault_token(input, i, match_start)) > 0) {
+                intervals.push_back({match_start, match_len, "[REDACTED_SECRET]", 2, match_len - 2});
+                i = match_start + match_len; continue;
+            }
+
             // JWT: check for "eyJ" in header segment before calling parse_jwt
             if (i >= 4) {
                 std::size_t back = i;
@@ -699,7 +763,7 @@ void Matcher::scrub_inplace(char* data, std::size_t len) const {
             }
         }
 
-        // 2. Center-Out Parsers anchored on '_' (GitHub, Stripe)
+        // 2. Center-Out Parsers anchored on '_' (GitHub, Stripe, HuggingFace)
         else if (c == '_') {
             bool is_github = false;
             if (i >= 3) {
@@ -729,9 +793,14 @@ void Matcher::scrub_inplace(char* data, std::size_t len) const {
                 std::memset(data + match_start + 8, '*', match_len - 8);
                 i = match_start + match_len; continue;
             }
+
+            if ((match_len = secrets::parse_huggingface_token(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 3, '*', match_len - 3);
+                i = match_start + match_len; continue;
+            }
         }
 
-        // 3. Center-Out Parsers anchored on '-' (Private Keys, Slack, UUID, MAC, CC, SSN, Phone)
+        // 3. Center-Out Parsers anchored on '-' (AI/DevOps Tokens, Private Keys, Slack, UUID, MAC, CC, SSN, Phone)
         else if (c == '-') {
             // Fast bypass for date stamps YYYY-MM-DD (e.g. 2026-08-20)
             if (i >= 4 && i + 5 < len && is_digit(input[i-4]) && is_digit(input[i-3]) && is_digit(input[i-2]) && is_digit(input[i-1]) &&
@@ -739,20 +808,44 @@ void Matcher::scrub_inplace(char* data, std::size_t len) const {
                 i += 5; continue;
             }
 
+            // Anthropic Claude key (sk-ant-...)
+            if ((match_len = secrets::parse_anthropic_key(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 7, '*', match_len - 7);
+                i = match_start + match_len; continue;
+            }
+
+            // OpenAI API key (sk-proj-..., sk-admin-..., sk-...)
+            if ((match_len = secrets::parse_openai_key(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 3, '*', match_len - 3);
+                i = match_start + match_len; continue;
+            }
+
+            // GitLab Token (glpat-...)
+            if ((match_len = secrets::parse_gitlab_token(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 6, '*', match_len - 6);
+                i = match_start + match_len; continue;
+            }
+
+            // PyPI Token (pypi-...)
+            if ((match_len = secrets::parse_pypi_token(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 5, '*', match_len - 5);
+                i = match_start + match_len; continue;
+            }
+
+            // Slack token requires "xox"
+            if (i >= 4 && input[i-4] == 'x' && input[i-3] == 'o' && input[i-2] == 'x' &&
+                (input[i-1] == 'b' || input[i-1] == 'p' || input[i-1] == 'a' || input[i-1] == 'r' || input[i-1] == 's')) {
+                if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
+                    std::memset(data + match_start + 5, '*', match_len - 5);
+                    i = match_start + match_len; continue;
+                }
+            }
+
             // Private key requires "-----"
             if (i + 15 < len && input.substr(i, 5) == "-----") {
                 if ((match_len = secrets::parse_private_key(input, i)) > 0) {
                     std::memset(data + i, '*', match_len);
                     i += match_len; continue;
-                }
-            }
-
-            // Slack token requires "xox"
-            if (i >= 4 && input[i-4] == 'x' && input[i-3] == 'o' && input[i-2] == 'x' &&
-                (input[i-1] == 'b' || input[i-1] == 'p' || input[i-1] == 'a' || input[i-1] == 'r')) {
-                if ((match_len = secrets::parse_slack_token(input, i, match_start)) > 0) {
-                    std::memset(data + match_start + 5, '*', match_len - 5);
-                    i = match_start + match_len; continue;
                 }
             }
             
@@ -785,8 +878,14 @@ void Matcher::scrub_inplace(char* data, std::size_t len) const {
             }
         }
 
-        // 4. Center-Out Parsers anchored on '.' (JWT, IPv4)
+        // 4. Center-Out Parsers anchored on '.' (JWT, Vault, IPv4)
         else if (c == '.') {
+            // Vault token (hvs., hvb., s.)
+            if ((match_len = secrets::parse_vault_token(input, i, match_start)) > 0) {
+                std::memset(data + match_start + 2, '*', match_len - 2);
+                i = match_start + match_len; continue;
+            }
+
             // JWT: check for "eyJ" in header segment before calling parse_jwt
             if (i >= 4) {
                 std::size_t back = i;

@@ -34,10 +34,10 @@ bool has_context_word(std::string_view input, std::size_t pos, const std::string
     while (k_start > 0 && (std::isalnum(static_cast<unsigned char>(input[k_start-1])) || input[k_start-1] == '_')) k_start--;
     std::size_t k_len = k_end - k_start;
     
-    // Fast length reject: all valid keywords are between 5 and 14 chars
-    if (k_len < 5 || k_len > 14) return false;
+    // Fast length reject: all valid keywords are between 4 and 16 chars
+    if (k_len < 4 || k_len > 16) return false;
     
-    char lower_kw[16];
+    char lower_kw[20];
     for (std::size_t i = 0; i < k_len; ++i) {
         lower_kw[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(input[k_start + i])));
     }
@@ -75,15 +75,15 @@ std::size_t parse_aws_key(std::string_view s, std::size_t pos) noexcept {
 
 // Center-Out GitHub token parser: pos points to '_'
 std::size_t parse_github_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
-    // 1. ghp_ or gho_ (pos is the '_' at start+3)
-    if (pos >= 3 && pos + 36 <= s.size()) {
-        if ((s[pos-3] == 'g' && s[pos-2] == 'h' && s[pos-1] == 'p') ||
-            (s[pos-3] == 'g' && s[pos-2] == 'h' && s[pos-1] == 'o')) {
+    // 1. ghp_ or gho_ or ghu_ or ghs_ or ghr_ (pos is the '_' at start+3)
+    if (pos >= 3 && pos + 30 <= s.size()) {
+        if (s[pos-3] == 'g' && s[pos-2] == 'h' && 
+           (s[pos-1] == 'p' || s[pos-1] == 'o' || s[pos-1] == 'u' || s[pos-1] == 's' || s[pos-1] == 'r')) {
             std::size_t start = pos - 3;
             std::size_t curr = pos + 1;
             while (curr < s.size() && is_base62(s[curr])) curr++;
             std::size_t body_len = curr - (pos + 1);
-            if (body_len >= 36 && body_len <= 82) {
+            if (body_len >= 30 && body_len <= 82) {
                 match_start = start;
                 return curr - start;
             }
@@ -129,8 +129,9 @@ std::size_t parse_gcp_key(std::string_view s, std::size_t pos) noexcept {
 
 // Center-Out Slack token parser: pos points to '-'
 std::size_t parse_slack_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
-    if (pos >= 4 && pos + 36 <= s.size()) {
-        if (s[pos-4] == 'x' && s[pos-3] == 'o' && s[pos-2] == 'x' && (s[pos-1] == 'b' || s[pos-1] == 'p')) {
+    if (pos >= 4 && pos + 30 <= s.size()) {
+        if (s[pos-4] == 'x' && s[pos-3] == 'o' && s[pos-2] == 'x' && 
+           (s[pos-1] == 'b' || s[pos-1] == 'p' || s[pos-1] == 'a' || s[pos-1] == 'r' || s[pos-1] == 's')) {
             std::size_t start = pos - 4;
             std::size_t curr = pos + 1;
             int blocks = 0;
@@ -146,7 +147,7 @@ std::size_t parse_slack_token(std::string_view s, std::size_t pos, std::size_t& 
                 }
             }
             std::size_t total_len = curr - start;
-            if (blocks >= 3 && total_len >= 40 && total_len <= 80) {
+            if (blocks >= 2 && total_len >= 32 && total_len <= 90) {
                 match_start = start;
                 return total_len;
             }
@@ -157,7 +158,7 @@ std::size_t parse_slack_token(std::string_view s, std::size_t pos, std::size_t& 
 
 // Center-Out Stripe key parser: pos points to '_'
 std::size_t parse_stripe_key(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
-    // Case 1: pos is the first underscore (e.g. sk_live_)
+    // Case 1: pos is the first underscore (e.g. sk_live_, rk_live_, pk_live_)
     if (pos >= 2 && pos + 30 <= s.size()) {
         char c0 = s[pos-2], c1 = s[pos-1];
         if ((c0 == 's' || c0 == 'r' || c0 == 'p') && c1 == 'k') {
@@ -168,7 +169,7 @@ std::size_t parse_stripe_key(std::string_view s, std::size_t pos, std::size_t& m
                 std::size_t curr = body_start;
                 while (curr < s.size() && is_base62(s[curr])) curr++;
                 std::size_t body_len = curr - body_start;
-                if (body_len >= 24 && body_len <= 48) {
+                if (body_len >= 24 && body_len <= 64) {
                     match_start = start;
                     return curr - start;
                 }
@@ -187,7 +188,7 @@ std::size_t parse_stripe_key(std::string_view s, std::size_t pos, std::size_t& m
                     std::size_t curr = body_start;
                     while (curr < s.size() && is_base62(s[curr])) curr++;
                     std::size_t body_len = curr - body_start;
-                    if (body_len >= 24 && body_len <= 48) {
+                    if (body_len >= 24 && body_len <= 64) {
                         match_start = start;
                         return curr - start;
                     }
@@ -262,7 +263,7 @@ std::size_t parse_connection_string(std::string_view s, std::size_t pos, std::si
     if (s[pos] != ':' || s[pos+1] != '/' || s[pos+2] != '/') return 0;
     
     std::size_t scheme_start = pos;
-    while (scheme_start > 0 && std::isalpha(static_cast<unsigned char>(s[scheme_start - 1]))) {
+    while (scheme_start > 0 && (std::isalpha(static_cast<unsigned char>(s[scheme_start - 1])) || s[scheme_start - 1] == '+')) {
         scheme_start--;
     }
     if (scheme_start == pos) return 0;
@@ -277,16 +278,11 @@ std::size_t parse_connection_string(std::string_view s, std::size_t pos, std::si
     
     static constexpr std::string_view db_schemes[] = {
         "postgres", "postgresql", "mysql", "mongodb", "redis",
-        "amqp", "mssql", "oracle", "sqlserver"
+        "amqp", "mssql", "oracle", "sqlserver", "mongodb+srv"
     };
     bool valid_scheme = false;
     for (const auto& ds : db_schemes) {
         if (scheme == ds) { valid_scheme = true; break; }
-    }
-    if (!valid_scheme && scheme_sv.size() >= 7) {
-        if (scheme_start + 11 <= pos && s.substr(scheme_start, 11) == "mongodb+srv") {
-            valid_scheme = true;
-        }
     }
     if (!valid_scheme) return 0;
     
@@ -326,9 +322,9 @@ std::size_t parse_kv_secret(std::string_view s, std::size_t pos, std::size_t& va
     static constexpr std::string_view kv_keywords[] = {
         "password", "passwd", "secret", "api_key", "apikey", "api_secret",
         "access_token", "auth_token", "private_key", "client_secret",
-        "token", "bearer", "credential"
+        "token", "bearer", "credential", "dd_api_secret", "dd_app"
     };
-    if (!has_context_word(s, pos, kv_keywords, 13)) return 0;
+    if (!has_context_word(s, pos, kv_keywords, 15)) return 0;
     
     std::size_t curr = pos + 1;
     while (curr < s.size() && (s[curr] == ' ' || s[curr] == '\t')) curr++;
@@ -364,6 +360,142 @@ std::size_t parse_kv_secret(std::string_view s, std::size_t pos, std::size_t& va
     if (quote && end < s.size() && s[end] == quote) end++;
     
     return end - pos;
+}
+
+// ---------------------------------------------------------------------------
+// Modern AI, DevOps & Security Token Parsers
+// ---------------------------------------------------------------------------
+
+// OpenAI API Key (sk-proj-, sk-admin-, sk-svcacct-, legacy sk-)
+std::size_t parse_openai_key(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    // Anchor pos is '-' in "sk-" or start of 's'
+    if (pos >= 2 && pos + 40 <= s.size()) {
+        if (s[pos-2] == 's' && s[pos-1] == 'k' && s[pos] == '-') {
+            std::size_t start = pos - 2;
+            std::size_t curr = pos + 1;
+            
+            // Check sub-prefixes: proj-, admin-, svcacct-
+            if (curr + 5 <= s.size() && s.substr(curr, 5) == "proj-") curr += 5;
+            else if (curr + 6 <= s.size() && s.substr(curr, 6) == "admin-") curr += 6;
+            else if (curr + 8 <= s.size() && s.substr(curr, 8) == "svcacct-") curr += 8;
+            
+            std::size_t body_start = curr;
+            while (curr < s.size() && is_base62_ext(s[curr])) curr++;
+            std::size_t body_len = curr - body_start;
+            
+            if (body_len >= 32) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    return 0;
+}
+
+// Anthropic Claude Key (sk-ant-api03-, sk-ant-admin01-, sk-ant-)
+std::size_t parse_anthropic_key(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    // Anchor pos is '-' in "sk-ant-"
+    if (pos >= 6 && pos + 40 <= s.size()) {
+        if (s.substr(pos - 6, 7) == "sk-ant-") {
+            std::size_t start = pos - 6;
+            std::size_t curr = pos + 1;
+            
+            if (curr + 6 <= s.size() && s.substr(curr, 6) == "api03-") curr += 6;
+            else if (curr + 8 <= s.size() && s.substr(curr, 8) == "admin01-") curr += 8;
+            
+            std::size_t body_start = curr;
+            while (curr < s.size() && is_base62_ext(s[curr])) curr++;
+            std::size_t body_len = curr - body_start;
+            
+            if (body_len >= 40) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    return 0;
+}
+
+// GitLab Token (glpat-, glcbt-, glft-)
+std::size_t parse_gitlab_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    if (pos >= 5 && pos + 20 <= s.size()) {
+        if (s[pos] == '-' && s[pos-5] == 'g' && s[pos-4] == 'l' && 
+           (s.substr(pos - 3, 3) == "pat" || s.substr(pos - 3, 3) == "cbt" || s.substr(pos - 3, 3) == "ft-")) {
+            std::size_t start = pos - 5;
+            std::size_t curr = pos + 1;
+            while (curr < s.size() && is_base62_ext(s[curr])) curr++;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len >= 20 && body_len <= 64) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    return 0;
+}
+
+// PyPI Token (pypi-AgEI...)
+std::size_t parse_pypi_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    if (pos >= 4 && pos + 30 <= s.size()) {
+        if (s[pos] == '-' && s.substr(pos - 4, 4) == "pypi") {
+            std::size_t start = pos - 4;
+            std::size_t curr = pos + 1;
+            while (curr < s.size() && is_base62_ext(s[curr])) curr++;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len >= 30) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    return 0;
+}
+
+// HashiCorp Vault Token (hvs., hvb., s.)
+std::size_t parse_vault_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    // pos is '.'
+    if (pos >= 3 && pos + 24 <= s.size()) {
+        if (s[pos] == '.' && (s.substr(pos - 3, 3) == "hvs" || s.substr(pos - 3, 3) == "hvb")) {
+            std::size_t start = pos - 3;
+            std::size_t curr = pos + 1;
+            while (curr < s.size() && is_base62_ext(s[curr])) curr++;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len >= 24) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    if (pos >= 1 && pos + 24 <= s.size()) {
+        if (s[pos] == '.' && s[pos-1] == 's') {
+            std::size_t start = pos - 1;
+            std::size_t curr = pos + 1;
+            while (curr < s.size() && is_base62(s[curr])) curr++;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len == 24) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    return 0;
+}
+
+// HuggingFace Token (hf_...)
+std::size_t parse_huggingface_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept {
+    if (pos >= 2 && pos + 30 <= s.size()) {
+        if (s[pos] == '_' && s[pos-2] == 'h' && s[pos-1] == 'f') {
+            std::size_t start = pos - 2;
+            std::size_t curr = pos + 1;
+            while (curr < s.size() && is_base62(s[curr])) curr++;
+            std::size_t body_len = curr - (pos + 1);
+            if (body_len >= 30 && body_len <= 45) {
+                match_start = start;
+                return curr - start;
+            }
+        }
+    }
+    return 0;
 }
 
 } // namespace secrets

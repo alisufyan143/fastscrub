@@ -20,6 +20,14 @@ JwtMatch parse_jwt(std::string_view s, std::size_t pos, std::size_t& match_start
 std::size_t parse_connection_string(std::string_view s, std::size_t pos, std::size_t& password_start, std::size_t& password_len) noexcept;
 std::size_t parse_kv_secret(std::string_view s, std::size_t pos, std::size_t& value_start, std::size_t& value_len) noexcept;
 
+// Modern AI, DevOps & Security Token Parsers
+std::size_t parse_openai_key(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept;
+std::size_t parse_anthropic_key(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept;
+std::size_t parse_gitlab_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept;
+std::size_t parse_pypi_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept;
+std::size_t parse_vault_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept;
+std::size_t parse_huggingface_token(std::string_view s, std::size_t pos, std::size_t& match_start) noexcept;
+
 bool has_context_word(std::string_view input, std::size_t pos, const std::string_view* keywords, std::size_t num_keywords) noexcept;
 
 } // namespace secrets

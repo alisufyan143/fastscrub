@@ -96,3 +96,41 @@ class TestInfrastructureSecrets:
         buf = bytearray(text.encode("utf-8"))
         scrub_inplace(buf)
         assert buf.decode("utf-8") == "*" * len(text)
+
+    def test_openai_key_redaction(self):
+        # Concatenated to avoid secret scanning triggers
+        text = "openai_key: " + "sk-proj-" + "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+        res = scrub(text)
+        assert "[REDACTED_SECRET]" in res
+        
+        buf = bytearray(text.encode("utf-8"))
+        scrub_inplace(buf)
+        assert "*" in buf.decode("utf-8")
+
+    def test_anthropic_key_redaction(self):
+        text = "claude_key: " + "sk-ant-api03-" + "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+        res = scrub(text)
+        assert "[REDACTED_SECRET]" in res
+        
+        buf = bytearray(text.encode("utf-8"))
+        scrub_inplace(buf)
+        assert "*" in buf.decode("utf-8")
+
+    def test_gitlab_token_redaction(self):
+        text = "gitlab: " + "glpat-" + "1234567890abcdefghijklmn"
+        res = scrub(text)
+        assert "[REDACTED_SECRET]" in res
+
+    def test_pypi_token_redaction(self):
+        text = "pypi_upload: " + "pypi-" + "AgEIcHlwaS5vcmcCJDEyMzQ1Njc4LTkwYWItY2RlZi0xMjM0LTU2Nzg5MGFiY2RlZg"
+        res = scrub(text)
+        assert "[REDACTED_SECRET]" in res
+
+    def test_french_nir_redaction(self):
+        text = "Numéro sécurité sociale: 1 85 12 75 108 105 42"
+        res = scrub(text)
+        assert "[REDACTED_SSN]" in res
+        
+        buf = bytearray(text.encode("utf-8"))
+        scrub_inplace(buf)
+        assert "*" in buf.decode("utf-8")
