@@ -4,12 +4,13 @@ project(fastscrub LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT MSVC)
-    # Bypass the broken C++11 ABI in Conda's GCC 16 by forcing the universally compatible legacy ABI
-    add_compile_options(-O3 -march=native -D_GLIBCXX_USE_CXX11_ABI=0)
+if(MSVC)
+    add_compile_options(/O2 /utf-8 /permissive-)
+else()
+    add_compile_options(-O3)
 endif()
 
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(nanobind CONFIG REQUIRED)
 
 nanobind_add_module(fastscrub_backend

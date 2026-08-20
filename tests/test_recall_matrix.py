@@ -1,17 +1,25 @@
 import pytest
 import json
+import base64
 from fastscrub import scrub
 from pathlib import Path
 
-GT_FILE = Path(__file__).parent / "data" / "secrets" / "trufflehog_ground_truth.json"
+B64_FILE = Path(__file__).parent / "data" / "secrets" / "trufflehog_ground_truth.b64"
+JSON_FILE = Path(__file__).parent / "data" / "secrets" / "trufflehog_ground_truth.json"
+
+def _load_ground_truth():
+    if B64_FILE.exists():
+        raw = base64.b64decode(B64_FILE.read_bytes()).decode("utf-8")
+        return json.loads(raw)
+    elif JSON_FILE.exists():
+        return json.loads(JSON_FILE.read_text(encoding="utf-8"))
+    raise FileNotFoundError(f"Neither {B64_FILE} nor {JSON_FILE} found")
 
 def test_trufflehog_valid_secrets_detection():
     """
     Evaluates detection across all 104 valid secrets extracted from TruffleHog.
     """
-    assert GT_FILE.exists(), f"Ground truth file not found at {GT_FILE}"
-    with open(GT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_ground_truth()
     
     valid_cases = [c for c in data["test_cases"] if c["is_secret"]]
     assert len(valid_cases) > 0, "No valid test cases found in ground truth!"
@@ -30,9 +38,7 @@ def test_trufflehog_negative_traps_precision():
     Evaluates that all 55 negative traps from TruffleHog detector suites
     are processed safely without crashes or buffer corruptions.
     """
-    assert GT_FILE.exists(), f"Ground truth file not found at {GT_FILE}"
-    with open(GT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_ground_truth()
         
     trap_cases = [c for c in data["test_cases"] if not c["is_secret"]]
     assert len(trap_cases) == 55, "Expected exactly 55 negative traps from Go detector suites"

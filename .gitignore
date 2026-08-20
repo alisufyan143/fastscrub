@@ -42,11 +42,14 @@ CMakeInit.txt
 *.lib
 *.dll
 
-# Testing
+# Testing & Datasets
 .pytest_cache/
 *.zip
-tests/data/
-!tests/data/.keep
+*.tar.gz
+*.parquet
+tests/data/*
+!tests/data/secrets/
+!tests/data/secrets/trufflehog_ground_truth.b64
 
 # Environments
 .env

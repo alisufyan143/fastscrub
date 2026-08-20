@@ -406,6 +406,7 @@ class TestLineEndings:
 # ======================================================================
 # 7. Messy production log scrubbing (real-world benchmark data)
 # ======================================================================
+@pytest.mark.skipif(not MESSY_LOGS_PATH.exists(), reason="Optional large benchmark file not present in CI")
 class TestMessyProductionLogs:
     """Run the scrubber over the entire downloaded benchmark file and verify
     that no common raw PII patterns survive in the output."""
