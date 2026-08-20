@@ -22,7 +22,7 @@ struct ChunkRange {
 /// Owns a single compiled Matcher and exposes both single-string and
 /// bulk-text entry points.  Bulk scrubbing splits the input into
 /// overlap-aware chunks and processes them concurrently using
-/// std::jthread (C++20, auto-joining).
+/// std::thread (C++20, parallel joining).
 class Engine {
 public:
     /// Construct the engine, compiling all PII patterns once.

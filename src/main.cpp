@@ -91,7 +91,8 @@ NB_MODULE(fastscrub_backend, m) {
             // 2. completely free the Python GIL for this thread lifetime!
             nb::gil_scoped_release release; 
             
-            std::vector<std::jthread> threads;
+            std::vector<std::thread> threads;
+            threads.reserve(workers);
             for (unsigned t = 0; t < workers; ++t) {
                 threads.emplace_back([&]() {
                     while (true) {
@@ -101,7 +102,10 @@ NB_MODULE(fastscrub_backend, m) {
                     }
                 });
             }
-        } // 3. All threads join here natively, then the GIL is re-acquired.
+            for (auto& th : threads) {
+                if (th.joinable()) th.join();
+            }
+        } // 3. All threads joined, then GIL is re-acquired.
 
         // 4. Zero-Copy return logic
         nb::list py_out;

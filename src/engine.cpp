@@ -92,7 +92,7 @@ std::vector<PiiInterval> Engine::scan_bulk_intervals(std::string_view input) con
     std::vector<std::vector<PiiInterval>> thread_intervals(chunks.size());
 
     {
-        std::vector<std::jthread> threads;
+        std::vector<std::thread> threads;
         threads.reserve(chunks.size());
         for (std::size_t i = 0; i < chunks.size(); ++i) {
             threads.emplace_back([this, &input, &chunks, &thread_intervals, i]() {
@@ -106,6 +106,9 @@ std::vector<PiiInterval> Engine::scan_bulk_intervals(std::string_view input) con
                 }
                 thread_intervals[i] = std::move(local_intervals);
             });
+        }
+        for (auto& th : threads) {
+            if (th.joinable()) th.join();
         }
     }
 
@@ -180,7 +183,7 @@ void Engine::scrub_bulk_inplace(char* data, std::size_t len) const {
     }
 
     // Direct multi-threaded in-place masking: ZERO vector allocations, ZERO sorting
-    std::vector<std::jthread> threads;
+    std::vector<std::thread> threads;
     threads.reserve(chunks.size());
     for (std::size_t i = 0; i < chunks.size(); ++i) {
         threads.emplace_back([this, data, &chunks, i]() {
@@ -188,6 +191,9 @@ void Engine::scrub_bulk_inplace(char* data, std::size_t len) const {
             std::size_t chunk_len = chunks[i].scan_end - chunks[i].start;
             matcher_.scrub_inplace(chunk_ptr, chunk_len);
         });
+    }
+    for (auto& th : threads) {
+        if (th.joinable()) th.join();
     }
 }
 
