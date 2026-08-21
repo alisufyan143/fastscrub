@@ -3,80 +3,72 @@
 [![PyPI Version](https://img.shields.io/pypi/v/fastscrub.svg?color=007ec6)](https://pypi.org/project/fastscrub/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fastscrub.svg)](https://pypi.org/project/fastscrub/)
 [![CI - Multi-Platform Wheels](https://github.com/alisufyan143/fastscrub/actions/workflows/ci.yml/badge.svg)](https://github.com/alisufyan143/fastscrub/actions)
+[![Docs](https://img.shields.io/badge/Docs-Live%20Site-blueviolet.svg)](https://alisufyan143.github.io/fastscrub/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-A high-performance, zero-allocation **Personally Identifiable Information (PII)** and **Infrastructure Secrets** redaction engine for Python, powered by a vectorized C++20 backend.
+A zero-allocation, SWAR-vectorized **Personally Identifiable Information (PII)** and **Infrastructure Secrets** redaction engine for Python with a C++20 core.
 
-`fastscrub` is engineered to solve a fundamental challenge in data pipelines and security compliance: **redacting tens of gigabytes or terabytes of messy production logs, database dumps, and unstructured text at wire speed without memory bloat or Python GIL lock contention.**
-
----
-
-## 📦 Quick Installation
-
-Install pre-compiled binary wheels directly from PyPI (Linux, macOS, Windows):
-
-```bash
-pip install fastscrub
-```
-
-*No C++ compiler required for wheel installs on x86_64 and ARM64 (Apple Silicon).*
+* **Sustained Wire-Speed Throughput**: **107.27 MB/s sustained (peaking at 144.33 MB/s)** on consumer dual-core hardware.
+* **Large-Scale Log Ingestion**: Processed the entire **30.3 GB Thunderbird supercomputer dataset in ~4.7 minutes** with a flat memory footprint (<80 MB).
+* **Industrial Accuracy**: Tested across **137,026 third-party annotated documents** (AI4Privacy, Presidio, TruffleHog), achieving **99.95% Precision** and a **0.858 F1-Score**.
 
 ---
 
-## ⚡ 30-Second Quickstart
+## 🧪 The Origin Story: An Experiment in AI-Driven Systems Engineering
 
-### 1. Basic Redaction (Mode A: Labeled Tokens)
-Returns a safe, redacted string with descriptive `[REDACTED_*]` tags:
+> **"I am a Python and AI/ML engineer. I do not write low-level C++ memory management by hand."**
 
-```python
-from fastscrub import scrub
+This project did not start as an enterprise product roadmap. It started as an experiment to test the absolute boundaries of modern AI coding agents on **low-level systems engineering**.
 
-raw = "User 123-45-6789 connected from 192.168.1.50 with token ghp_A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8."
-safe = scrub(raw)
+Could a Python engineer acting purely as a **Systems Architect** guide an AI agent to design, implement, optimize, and ship an industrial-grade C++20 engine with zero-copy Python C-bindings, multi-platform CI/CD pipelines, and a global PyPI release?
 
-print(safe)
-# Output: "User [REDACTED_SSN] connected from [REDACTED_IP] with token [REDACTED_GITHUB_TOKEN]."
+### The Division of Labor
+
+```mermaid
+graph TD
+    subgraph Human Architect ["👤 Systems Architect (Human)"]
+        A1[Algorithmic Direction: SWAR 64-bit vs. Regex]
+        A2[Cache & Concurrency: Overlap-aware chunking]
+        A3[Ground-Truth Benchmark Matrix Design]
+        A4[Pipeline Governance & Strict Verification]
+    end
+
+    subgraph AI Agent ["🤖 Low-Level Implementer (AI Agent)"]
+        B1[C++20 Bitwise Math & Nanobind Bindings]
+        B2[Structural Parsers & Checksum Algorithms]
+        B3[CMakeLists & Multi-Platform GitHub Actions CI]
+        B4[PyPI Packaging & Wheel Matrix Automation]
+    end
+
+    Human Architect -->|Directs & Constrains| AI Agent
 ```
 
-### 2. High-Throughput In-Place Redaction (Mode B: `*` Masking)
-Directly mutates a Python `bytearray` in RAM. **Zero allocations, zero memory copying, maximum throughput.**
-
-```python
-from fastscrub import scrub_inplace
-
-buf = bytearray(b"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4ifQ.c2lnbmF0dXJl")
-scrub_inplace(buf)
-
-print(buf.decode("utf-8"))
-# Output: "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.************************************"
-```
-
-### 3. Multi-Core Batch Processing
-Drops the Python GIL and distributes lists of strings across all CPU cores in C++:
-
-```python
-from fastscrub import scrub_list
-
-logs = [
-    "Connection from 10.0.0.1 failed for user alice@corp.com",
-    "Card charged: 4532-0150-1234-5678, phone: +1 (555) 234-5678",
-    "Session 550e8400-e29b-41d4-a716-446655440000 used key AKIAIOSFODNN7EXAMPLE"
-]
-
-safe_logs = scrub_list(logs)
-for line in safe_logs:
-    print(line)
-```
+* **The Human Role**: Systems design, cache awareness, selecting data structures, architecting zero-copy memory paths, defining benchmark matrices, and catching low-level architecture traps.
+* **The AI Role**: Rapid C++20 syntax generation, `nanobind` glue code, bitwise mask implementations, CMake build scaffolding, and multi-platform CI/CD automation.
 
 ---
 
-## 🌟 Key Highlights
+## 🛠️ The Engineering Hurdles: Where AI Failed & How We Fixed It
 
-* **Vectorized Center-Out SWAR Scanning**: Skips clean ASCII text 8 bytes per CPU cycle using 64-bit SIMD-Within-A-Register (SWAR) bit-twiddling and triggers center-out structural lookups on high-entropy punctuation anchors (`@`, `_`, `-`, `.`, `:`, `=`, `+`, `(`, `"`, `A`).
-* **True Zero-Allocation In-Place Mutation (Mode B)**: Directly mutates Python `bytearray` buffers in RAM by overwriting sensitive positions with `*` while preserving buffer length and context structure. Zero heap allocations and zero sorting passes.
-* **100+ MB/s End-to-End Throughput**: Processes a massive **30.3 GB real-world server log dataset (`Thunderbird.log`) in ~4.7 minutes** on modest quad-core consumer hardware, achieving **107.27 MB/s sustained throughput (peaking at 124.61 MB/s)**.
-* **Genuine Industrial Ground-Truth Accuracy**: Evaluated across **137,026 third-party annotated documents** (AI4Privacy, Microsoft Presidio, TruffleHog), achieving **99.97% Precision**, **0.852 F1-Score**, and **0.783 F2-Score (PIIMB)**.
-* **Overlap-Aware Multi-Core Concurrency**: Features an overlap-preserving chunking architecture (2048-byte boundary overlap) with native C++ worker thread pools that drop the Python GIL, guaranteeing large secrets (such as multi-hundred-byte JWTs or DB connection strings) are never fractured across thread splits.
+Let’s be brutally honest about AI code generation: **LLMs are fantastic at syntax and boilerplate, but naturally terrible at hardware mechanical sympathy and cache awareness.** 
+
+Left to its own devices, the AI produced code that compiled cleanly but performed terribly. Here is how architectural intervention turned it into a 100+ MB/s engine:
+
+### 1. The Regex & Character-Loop Trap
+* **The AI's Default**: The agent initially generated standard regex wrappers and single-byte `for`-loops. On gigabyte-scale inputs, this caused branch mispredictions and trashed the L1 CPU instruction cache, bottlenecking throughput at <15 MB/s.
+* **The Architectural Fix**: We banned regex entirely and forced the agent to implement **64-bit SWAR (SIMD-Within-A-Register)**. The engine loads 8 bytes into a `uint64_t` register, running parallel bitwise tests `(x - 0x01...) & ~x & 0x80...` to skip clean text 8 bytes per CPU cycle and trigger center-out parsers only on structural punctuation anchors (`@`, `_`, `-`, `.`, `:`, `=`, `+`, `(`, `"`, `A`).
+
+### 2. Timestamp Noise & False Positive Thrashing
+* **The AI's Default**: Production server logs contain millions of timestamps (`2026-08-21T04:15:30.123Z`) and snake_case variable names. The AI's initial parsers fired expensive checks on every `-` and `.`, collapsing performance.
+* **The Architectural Fix**: We designed a **1-cycle fast rejection guard**. When the scanner encounters `YYYY-` or `HH:`, it executes a 5-byte leap in a single cycle, bypassing all structural parsers on benign timestamps.
+
+### 3. The Multi-Threaded Chunk Boundary Cut
+* **The AI's Default**: When multi-threading large strings, the agent split the buffer evenly across threads. This created a critical security flaw: long tokens (e.g. 300-byte JWTs or DB connection URIs) landing directly on a split boundary were cut in half and missed entirely.
+* **The Architectural Fix**: We enforced an **overlap-aware chunking protocol**. Every thread receives a 2,048-byte lookahead overlap into the adjacent slice, followed by a deterministic deduplication pass (`merge_intervals`), guaranteeing zero secret fracture without the Python GIL.
+
+### 4. AppleClang & macOS Stable ABI Portability
+* **The AI's Default**: The agent wrote `std::jthread` (which AppleClang’s standard library has not yet stabilized) and used private CPython macros (`PyByteArray_AS_STRING`) that failed against Apple's `darwin-ld-cpython.sym` link table.
+* **The Architectural Fix**: We audited the symbol tables, replaced `std::jthread` with portable `std::thread` worker joins, and migrated private macros to official Python Stable ABI functions (`PyByteArray_AsString`).
 
 ---
 
@@ -145,9 +137,9 @@ Evaluated on **159 verified test vectors** from TruffleHog's official Go detecto
 
 ---
 
-## ⚡ Large-Scale Multi-Domain Throughput Matrix
+### 4. Large-Scale Multi-Domain Throughput Matrix
 
-Tested across **57.46 GB of real-world server logs** (Loghub repository) on an Intel Core i5-7200U (2 cores / 4 threads @ 2.50GHz - 3.10GHz), 16 GB RAM, NVMe SSD:
+Tested across **57.46 GB of real-world uncompressed server logs** (Loghub repository) on an Intel Core i5-7200U (2 cores / 4 threads @ 2.50GHz - 3.10GHz), 16 GB RAM, NVMe SSD:
 
 | Dataset Name | Domain / Log Category | Size (MB) | Throughput | Peak Speed | Probe Recall |
 |---|---|---|---|---|---|
@@ -163,57 +155,91 @@ Tested across **57.46 GB of real-world server logs** (Loghub repository) on an I
 
 ---
 
-## 🛡️ Supported Detectors
+## ⚠️ Project Status & Disclaimer
 
-### Infrastructure & Cloud Secrets
-| Redaction Tag | Target Description & Prefix Rules |
-|---|---|
-| `[REDACTED_AWS_KEY]` | AWS Access Keys (`AKIA...`, `ASIA...`, `ABIA...`, `AROA...`, `AIDA...`) |
-| `[REDACTED_GCP_KEY]` | Google Cloud Platform API Keys (`AIza...`) |
-| `[REDACTED_GITHUB_TOKEN]` | GitHub Personal Access Tokens (`ghp_...`, `gho_...`, `github_pat_...`) |
-| `[REDACTED_SLACK_TOKEN]` | Slack Bot & User Tokens (`xoxb-...`, `xoxp-...`, `xoxa-...`, `xoxr-...`, `xoxs-...`) |
-| `[REDACTED_STRIPE_KEY]` | Stripe Live and Test API Keys (`sk_live_...`, `sk_test_...`, `pk_...`, `rk_...`) |
-| `[REDACTED_JWT]` | JSON Web Tokens (`eyJ... . eyJ... . signature`) |
-| `[REDACTED_PRIVATE_KEY]` | RSA, DSA, EC, and OpenSSH Private Key blocks (`-----BEGIN ... PRIVATE KEY-----`) |
-| `[REDACTED_DB_CONN]` | Database Connection Strings (`postgres://`, `mysql://`, `mongodb://`, `redis://`, etc.) |
-| `[REDACTED_SECRET]` | OpenAI (`sk-proj-`), Anthropic (`sk-ant-`), GitLab (`glpat-`), PyPI (`pypi-`), Vault (`hvs.`), HuggingFace (`hf_`), and Key-Value secrets (`api_key=`, `secret:`, `password=`) |
+> **This is an open-source portfolio project and systems engineering learning experiment.**
 
-### Structural PII
-| Redaction Tag | Target Description & Validation |
-|---|---|
-| `[REDACTED_EMAIL]` | RFC-compliant Email Addresses |
-| `[REDACTED_IP]` | IPv4 & IPv6 Addresses (Standard and Compressed) |
-| `[REDACTED_MAC]` | MAC Addresses (`00:1A:2B:3C:4D:5E` and `00-1A-2B-3C-4D-5E` formats) |
-| `[REDACTED_UUID]` | UUIDs (v1 through v5, Case-Insensitive) |
-| `[REDACTED_SSN]` | US Social Security Numbers & French NIR National IDs |
-| `[REDACTED_PHONE]` | US and International E.164 Phone Numbers |
-| `[REDACTED_CREDIT_CARD]` | Credit Card Numbers (**Strictly Luhn-checksum validated**) |
+* **Usability**: The binary wheels on PyPI are fully functional, high-performance, and tested with 75 unit tests and 137k+ benchmark documents.
+* **Maintenance Notice**: Because C++ systems programming is not my primary stack, this library is **not actively maintained with enterprise SLA or production support**.
+* **Open Source Spirit**: You are warmly encouraged to use it in your pipelines, inspect the SWAR vectorization algorithms, learn from the architecture, and fork/extend it for your own needs.
 
 ---
 
-## 🔬 Architecture Deep-Dive
+## 📦 Developer Quickstart
 
-### 1. Vectorized Center-Out SWAR Scanning
-Traditional regex engines inspect text character-by-character, suffering from branch mispredictions. `fastscrub` uses 64-bit integer registers to check 8 bytes simultaneously in 1 CPU cycle for key punctuation anchors (`@`, `_`, `-`, `.`, `:`, `=`, `+`, `(`, `"`, `A`).
+### 1. Installation
 
-### 2. 1-Cycle Fast Rejection Guards
-Server logs contain millions of timestamps (`2026-08-20T10:15:30.123Z`) and snake_case variables. Recognizing `YYYY-` or `HH:` immediately leaps forward 5 bytes in 1 CPU cycle, bypassing all structural parsers on clean timestamps.
-
-### 3. True Zero-Allocation Mode B In-Place Masking
-When scrubbing mutable buffers (`bytearray`), worker threads overwrite `'*'` directly into their assigned memory slice during the scan pass. This completely avoids allocating `std::vector<PiiInterval>` objects and eliminates sorting passes.
-
----
-
-## 🧪 Testing & Reproduction
+Install the pre-compiled wheel from PyPI:
 
 ```bash
-# 1. Run the complete unit test suite (75 tests)
+pip install fastscrub
+```
+
+*Pre-compiled wheels are available for Linux (`x86_64`), Windows (`x86_64`), and macOS (Apple Silicon `arm64` & Intel `x86_64`) on Python 3.10 through 3.13.*
+
+---
+
+### 2. Usage Modes
+
+#### Mode A: Labeled Token Replacement (`scrub`)
+```python
+from fastscrub import scrub
+
+raw = "User 123-45-6789 connected from 192.168.1.50 with token ghp_YOUR_GITHUB_TOKEN."
+safe = scrub(raw)
+
+print(safe)
+# Output: "User [REDACTED_SSN] connected from [REDACTED_IP] with token [REDACTED_GITHUB_TOKEN]."
+```
+
+#### Mode B: Zero-Allocation In-Place Mutation (`scrub_inplace`)
+Directly mutates a Python `bytearray` in RAM with zero heap allocations:
+```python
+from fastscrub import scrub_inplace
+
+buf = bytearray(b"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4ifQ.signature")
+scrub_inplace(buf)
+
+print(buf.decode("utf-8"))
+# Output: "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.************************************"
+```
+
+#### Mode C: Zero-GIL Multi-Core Batch Lists (`scrub_list`)
+```python
+from fastscrub import scrub_list
+
+logs = [
+    "Connection from 10.0.0.1 failed for user alice@corp.com",
+    "Card charged: 4532-0150-1234-5678, phone: +1 (555) 234-5678",
+    "Session initialized with AWS key AKIAIOSFODNN7EXAMPLE"
+]
+
+# Drops Python GIL and parallelizes across all CPU cores in C++
+safe_logs = scrub_list(logs)
+for line in safe_logs:
+    print(line)
+```
+
+---
+
+## 📖 Comprehensive Documentation
+
+For the full architectural guide, detector specifications, and big data streaming patterns, check out our live documentation site:
+
+👉 **[https://alisufyan143.github.io/fastscrub/](https://alisufyan143.github.io/fastscrub/)**
+
+---
+
+## 🧪 Testing & Benchmark Reproduction
+
+```bash
+# 1. Run unit tests
 pytest tests/ -v
 
-# 2. Run the Master Ground-Truth Leaderboard Benchmark (137k+ Docs)
+# 2. Reproduce the 137k+ ground-truth benchmark matrix
 python bench/eval_leaderboard.py --all
 
-# 3. Run the Multi-Domain Large-Scale Loghub Throughput Matrix
+# 3. Reproduce the 57 GB multi-domain throughput matrix
 python bench/benchmark_suite.py --all
 ```
 
