@@ -26,21 +26,21 @@ Could a Python engineer acting purely as a **Systems Architect** guide an AI age
 
 ```mermaid
 graph TD
-    subgraph Human Architect ["👤 Systems Architect (Human)"]
-        A1[Algorithmic Direction: SWAR 64-bit vs. Regex]
-        A2[Cache & Concurrency: Overlap-aware chunking]
-        A3[Ground-Truth Benchmark Matrix Design]
-        A4[Pipeline Governance & Strict Verification]
+    subgraph Human_Architect ["👤 Systems Architect (Human)"]
+        A1["Algorithmic Direction: SWAR 64-bit vs. Regex"]
+        A2["Cache & Concurrency: Overlap-Aware Chunking"]
+        A3["Ground-Truth Benchmark Matrix Design"]
+        A4["Pipeline Governance & Strict Verification"]
     end
 
-    subgraph AI Agent ["🤖 Low-Level Implementer (AI Agent)"]
-        B1[C++20 Bitwise Math & Nanobind Bindings]
-        B2[Structural Parsers & Checksum Algorithms]
-        B3[CMakeLists & Multi-Platform GitHub Actions CI]
-        B4[PyPI Packaging & Wheel Matrix Automation]
+    subgraph AI_Agent ["🤖 Low-Level Implementer (AI Agent)"]
+        B1["C++20 Bitwise Math & Nanobind Bindings"]
+        B2["Structural Parsers & Checksum Algorithms"]
+        B3["CMakeLists & Multi-Platform GitHub Actions CI"]
+        B4["PyPI Packaging & Wheel Matrix Automation"]
     end
 
-    Human Architect -->|Directs & Constrains| AI Agent
+    Human_Architect -->|Directs & Constrains| AI_Agent
 ```
 
 * **The Human Role**: Systems design, cache awareness, selecting data structures, architecting zero-copy memory paths, defining benchmark matrices, and catching low-level architecture traps.
